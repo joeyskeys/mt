@@ -1,62 +1,50 @@
-# MT — Metal Rendering
+# `mt` — Swift Metal library with C++ interoperability
 
-A minimal macOS Metal 3 app written in Swift. Uses the **mesh shader geometry pipeline** (object + mesh + fragment stages) to render a colored triangle in an 800×600 window.
+`mt` is a macOS Metal library implemented in Swift and exposed to C++ through
+Swift's generated C++ interoperability header.
+
+The project follows Metal's native ownership model:
+
+```text
+Device → CommandQueue → CommandBuffer → Encoders
+```
+
+The core does not require a global Vulkan-style context, Swift source
+integration in consuming C++ projects, AppKit, or `MTKView`.
 
 ## Requirements
 
-- **Apple Silicon Mac** (M1 or later) to **run** the app — mesh shaders require the Apple7 GPU family
 - macOS 13+
-- Xcode 15+ (Metal 3 toolchain)
+- CMake 3.26+ with a Swift 5.9-compatible toolchain
+- Clang/Xcode toolchain for C++ interoperability
 
-> **Intel Mac note:** You can build the project on Intel, but mesh shaders only run on Apple Silicon. \
-> If you previously built with `-arch arm64` on Intel and see *"incorrect executable format"*, do a clean rebuild — the binary must match your Mac's CPU (`x86_64` on Intel, `arm64` on Apple Silicon).
+The core Metal module uses Swift's `Metal` framework APIs. C++ consumers link
+the Swift library and include the generated `MTCore-Swift.h` through
+`include/mt/mt.hpp`.
 
-## Project layout
+## Repository layout
 
-```
-MT/
-  main.swift          # AppKit entry point
-  AppDelegate.swift   # Creates NSWindow + MTKView
-  Renderer.swift      # Mesh pipeline setup + drawMeshThreadgroups
-  Shaders.metal       # object_main, mesh_main, fragment_main
-MT.xcodeproj          # Xcode project (arm64 only)
-```
-
-## Pipeline overview
-
-```
-object_main  →  spawns mesh threadgroups
-mesh_main    →  reads vertex buffer, applies MVP, emits triangle
-fragment_main → outputs uniform `color`
+```text
+Sources/MTCore/       # Swift Metal implementation
+tests/MTCoreTests/    # Swift-side unit/runtime tests
+include/mt/           # C++ umbrella and generated-header aliases
+tests/                # C++ header and package-consumer tests
+examples/             # External C++ consumer examples
+docs/plans/           # Module implementation plans
 ```
 
-Draw calls use `drawMeshThreadgroups` instead of `drawPrimitives`.
+## Build/package shape
 
-## Build & run
+The CMake target:
 
-### Option 1 — Xcode (recommended)
+- builds the Swift `MTCore` library;
+- enables Swift/C++ interoperability;
+- generates `MTCore-Swift.h`;
+- installs the Swift library, generated header, C++ aliases, and CMake package
+  configuration.
 
-1. Open the project:
-   ```bash
-   open MT.xcodeproj
-   ```
-2. Select the **MT** scheme and **My Mac** as the run destination.
-3. Press **⌘R** to build and run.
+SwiftPM support is also provided through `Package.swift`.
 
-### Option 2 — Command line
-
-```bash
-xcodebuild -project MT.xcodeproj -scheme MT -configuration Debug -derivedDataPath .build/DerivedData build
-open .build/DerivedData/Build/Products/Debug/MT.app
-```
-
-## What you should see
-
-A window titled **MT — Metal** with a dark background and a solid orange triangle.
-
-## Next steps
-
-- Pass meshlet data through the object shader payload
-- Add frustum / meshlet culling in the object stage
-- Animate the MVP matrix from Swift each frame
-- Load indexed mesh data from file
+Build and runtime verification are intentionally pending on a Metal-capable
+machine. See [`docs/plans/README.md`](docs/plans/README.md) for the staged
+implementation and test plan.

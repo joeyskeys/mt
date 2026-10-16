@@ -34,6 +34,14 @@ playground.xcworkspace
 # Local Xcode derived data (used by CLI builds)
 .build/DerivedData/
 
+# Swift package and C++ interoperability artifacts
+.swiftpm/
+MTCore-Swift.h
+
+# CMake build trees
+/build/
+/cmake-build-*/
+
 # CocoaPods
 #
 # We recommend against adding the Pods directory to your .gitignore. However
