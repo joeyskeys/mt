@@ -1,6 +1,6 @@
 # Plan 08 — Scene, assets, geometry, and built-in shaders
 
-**Status:** proposed
+**Status:** implemented — Swift-first scene/asset slice; verification pending
 **Parent:** [`METAL_WRAPPER_PLAN.md`](../../METAL_WRAPPER_PLAN.md), [Plan 04](04-resources-memory-and-sync.md), [Plan 05](05-shaders-pipelines-and-bindings.md), [Plan 07](07-renderer-layer.md)
 
 ## Goal
@@ -222,4 +222,79 @@ dependency-free glyph path.
 - Built-in MSL layouts are validated against their C++ structs.
 - Meshlet data coexists with an indexed fallback.
 - Importer and font dependencies remain optional.
+
+## Implementation in this slice
+
+The Swift core now provides the first device-independent scene and asset
+module. The generated C++ header exposes the same public types through the
+following organized facades:
+
+- `mt/scene.hpp`: `Vector2`, `Vector3`, `Vector4`, `Matrix4x4`, `Transform`,
+  `SceneObject`, and `Scene`;
+- `mt/assets.hpp`: `Mesh`, `MeshGPU`, `DrawableManager`, `Lines`, and
+  `Points`;
+- `mt/material.hpp`: `Material` and `MaterialManager`;
+- `mt/lights.hpp`: `LightKind`, `Light`, `LightGPUData`, and `LightManager`;
+- `mt/built_in_shaders.hpp`: `BuiltInFrameData`,
+  `FixedColorMaterialData`, `BuiltInShaderFamily`, and
+  `BuiltInShaderLayout`.
+
+The implementation deliberately separates CPU domain data from Metal
+resources:
+
+- `Mesh`, `Scene`, `MaterialManager`, and `LightManager` do not own a device;
+- `DrawableManager.uploadMesh` and `LightManager.upload` explicitly create
+  shared or managed Metal buffers and report failures through the manager
+  error string;
+- `MeshGPU.makeRenderBatch` turns an uploaded indexed or non-indexed mesh into
+  the renderer's existing submission type;
+- materials bind direct Metal slots through the existing render encoder and
+  declare requirements for mesh shaders, argument buffers, and indirect
+  command buffers;
+- `BuiltInFrameData` and `FixedColorMaterialData` provide the first explicit
+  Swift/C++ data-layout pair for MSL's `float4x4` and `float4` contracts;
+  each can create a `ParameterBlock` for the matching `set*Bytes` binding;
+  `BuiltInShaderLayout` keeps entry points, vertex/frame/material/light buffer
+  indices, stride, and required-feature metadata adjacent to that data. The
+  source-controlled `shaders/built_in/fixed_color.metal` provides the first
+  matching MSL pair.
+The CMake install exports that source under `share/mt/shaders/built_in`; a
+consumer can turn it into a deployment-specific metallib with the Plan 05
+`mt_add_metallib()` helper.
+
+The CMake test tree includes `tests/unit/scene` for generated C++ API shape.
+`SceneTests.swift` covers CPU scene/geometry/material/light behavior and
+device-guarded upload, batch, and light-buffer paths. These tests and the MSL
+source have not been built or run on the current non-verification machine.
+
+## Intentionally deferred
+
+- Private-resource staging uploads and managed-resource synchronization beyond
+  the explicit CPU-visible upload path belong to
+  [Plan 12 — Core ABI, resources, and lifetime completion](12-core-abi-resources-and-lifetime.md).
+- Versioned `sync_to_gpu` tracking and an explicit completion-backed retirement
+  queue for replaced/removed GPU meshes belong to
+  [Plan 16 — Scene, assets, and built-in shaders completion](16-scene-assets-and-built-in-shaders-completion.md).
+- `MeshView`, curve data, meshlet payload generation, LOD/culling metadata,
+  and retention of indexed plus meshlet representations belong to Plan 16.
+- Assimp or other importer adapters, texture-file loading, and asset
+  serialization are optional integrations covered by
+  [Plan 21 — Asset-pipeline integrations](21-asset-pipeline-integrations.md).
+- Full material parameter/argument-buffer tables, texture ownership, sampler
+  fallback policy, and persistent material/pipeline caches belong to Plans 13
+  and 16.
+- Forward+ cluster-index generation, shadow resources, and renderer-driven
+  scene traversal belong to
+  [Plan 15 — Renderer completion](15-renderer-completion.md).
+- Phong, clustered Phong, PBR, shadow, billboard, text, mesh-visualization,
+  and light-clustering shader implementations. The fixed-color source is
+  metadata/package scaffolding, not a complete built-in shader library. These
+  implementations belong to Plan 16.
+- Font loading and glyph atlas generation are optional integrations covered by
+  [Plan 20 — GUI and text integrations](20-gui-and-text-integrations.md).
+
+Build, C++ ABI generation, MSL compilation, and runtime verification remain
+pending on a Metal-capable macOS machine. Scene, shader, and upload evidence
+is tracked in
+[Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
 

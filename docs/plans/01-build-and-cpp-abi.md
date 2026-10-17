@@ -185,11 +185,18 @@ Implemented in the Swift-first migration slice:
 The generated-header/package path and Swift runtime linkage remain intentionally
 unverified until a Metal-capable macOS machine is available.
 
-## Deferred decisions
+## Decisions recorded by Plan 12
 
-- Whether the installed library is named `libmt` or uses a versioned suffix.
-- Whether CMake or SwiftPM is the canonical distribution entry point.
-- ABI compatibility policy across Swift compiler versions.
-- Whether shader compilation runs at configure time, build time, or release
-  packaging time.
+- The installed CMake package is named `mt`, exports `mt::mt`, and currently
+  uses project version `0.1.0`.
+- CMake is the canonical installed C++ distribution path; SwiftPM is the
+  canonical Swift distribution path.
+- The public C++ ABI is the generated Swift interoperability header for the
+  supported Swift 5.9-compatible/macOS 13 toolchain range.
+- Source MSL is packaged for consumers and compiled into deployment-specific
+  metallibs through the installed CMake helper.
+
+Long-term ABI compatibility across Swift compiler versions and release policy
+remain subject to the evidence collected by
+[Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
 

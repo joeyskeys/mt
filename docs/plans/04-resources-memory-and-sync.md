@@ -251,10 +251,12 @@ Implemented in Swift:
 - command-buffer shared-event signal/wait operations;
 - organized C++ facade headers and Swift/C++ API-shape tests.
 
-Private-resource staging helpers, full subresource-region upload/readback,
-completion-aware ring-buffer reuse, and the optional string-keyed registry are
-deferred to follow-up resource work. Private resources must be populated and
-read back through explicit blit resources/encoders rather than hidden queues.
-Build and runtime verification remains intentionally pending on a
-Metal-capable macOS machine.
+Plan 12 adds private-resource staging helpers, full subresource-region
+upload/readback, completion-aware ring-buffer reuse, resource
+retirement/versioning, and the optional typed string-keyed registry. Private
+resources must be populated and read back through explicit blit
+resources/encoders rather than hidden queues. Build and runtime verification
+remains intentionally pending on a Metal-capable macOS machine; evidence is
+tracked in
+[Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
 

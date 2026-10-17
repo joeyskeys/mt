@@ -44,12 +44,61 @@ The repository currently contains:
 - A generated `MTCore-Swift.h` integration path with C++ umbrella aliases.
 - C++ public-header, command/surface/resource API, consumer, and package-shape
   tests.
-- Swift-side capability, command, surface, and resource runtime tests.
+- Swift-side capability, command, surface, resource, shader, native-feature,
+  and renderer runtime tests.
+- Swift-first MSL/metallib shader libraries, function constants, explicit
+  binding layouts, pipeline reflection, and render/compute pipeline wrappers.
+- Direct render/compute pipeline and resource-slot binding plus an inline
+  parameter-block path for small Metal `set*Bytes` values.
+- An installed CMake helper for reproducible MSL-to-metallib packaging.
+- Capability-gated Metal extension wrappers for mesh dispatch, argument
+  buffers, indirect command buffers, tile pipelines, and GPU timing.
+- A Swift renderer submission layer with Forward/Forward+ modes, explicit
+  render views and batches, indexed/mesh/indirect path selection, fallback
+  pipelines, resize generations, and renderer statistics.
+- A Swift viewport/picking layer with explicit picking, scene, and overlay
+  phases, configured features, offscreen ID/depth targets, and polled
+  object/vertex readback.
+- Optional AppKit/CAMetalLayer and MTKView adapters with generated C++ headers,
+  plus toolkit-neutral input events consumed by the viewport.
+- A Plan 11 validation harness with Swift failure-path/capability tests,
+  an opt-in installed-package consumer test, and a capability-matrix template.
+- A Plan 12 core completion slice with validated subresource transfers,
+  explicit staging/readback, completion tokens, retirement/versioning, and an
+  optional typed resource registry.
+- A Plan 13 shader/pipeline completion slice with device-scoped cache keys,
+  persistent Metal binary archives, dynamic-library linking, depth/stencil
+  state objects, nested/array argument-buffer tables, stronger reflection
+  validation, and a native mesh/object shader fixture.
 
-The renderer, shader, scene, viewport, and host-integration modules remain
-planned work. Higher-level resource registries are also deferred. Mesh-shader
-examples will be added under the module plan that owns their pipeline rather
-than kept as a separate application demo.
+Host integrations are optional and partially implemented. Plan 08 provides
+the first scene/asset slice: CPU transforms and meshes, named scene and
+drawable managers, explicit shared/managed geometry and light uploads,
+material registration, and built-in shader entry-point/layout metadata.
+Plan 09 adds the first viewport/picking slice with explicit phases,
+offscreen ID/depth targets, and polled readback. Higher-level resource
+registries are now available as an optional typed service. Ray-tracing
+build/table APIs, GPU light clustering, complete built-in shader families, and
+automatic scene ID-pass generation remain deferred. Mesh/object pipeline
+descriptors, native mesh-dispatch hooks, and renderer path selection are
+present, but require capability-specific runtime coverage on a Metal-capable
+machine.
+
+The deferred work is now organized into a second roadmap:
+
+- Plans 12–17 are **wrapper-owned graphics features**. They complete the
+  core ABI/resource contract, shader and binding layer, Metal-native
+  capabilities, renderer, scene/assets data, and viewport/picking behavior.
+- Plan 18 is **verification and release evidence**. It validates the wrapper,
+  package, examples, capability matrix, and performance on Metal-capable
+  machines; it does not implement graphics features.
+- Plans 19–22 are **optional integrations**. They cover host frameworks,
+  GUI/text libraries, asset pipelines, Python, and external resources. They
+  must remain independently enabled and must not expand the core dependency
+  set.
+
+See [`docs/plans/README.md`](docs/plans/README.md) for the complete
+dependency-ordered follow-up plan set.
 
 ## Design correction: Metal does not require a global `Context`
 
@@ -131,7 +180,7 @@ Reference material for this model:
 | Shader module and reflection | `mt::ShaderLibrary` / pipeline reflection | Uses MSL source or precompiled metallib, function constants, explicit binding metadata, and Metal reflection. |
 | Forward / Forward+ renderer | `ForwardRenderer` / `ForwardPlusRenderer` | Uses compute clustering, argument buffers, instancing, and GPU-driven submission where useful. |
 | `Scene`, `DrawableMgr`, `LightMgr` | `mt::Scene`, `mt::DrawableManager`, `mt::LightManager` | Keeps CPU scene data separate from GPU resource ownership. |
-| `vp::Viewport<...>` | `mt::vp::Viewport<...>` | Keeps compile-time feature composition and picking/scene/overlay phases. |
+| `vp::Viewport<...>` | `mt::Viewport` (with configured Swift feature objects) | Keeps picking/scene/overlay phases without requiring a C++ template or Swift protocol bridge. |
 | `WindowBackend` | `mt::SurfaceBackend` plus host adapters | Core only needs drawable acquisition and size/resize state; AppKit, GLFW, and Qt adapters can be separate. |
 | ImGui and font helpers | Optional Metal integrations | Must not be required by the core library. |
 | CUDA/Vulkan external memory | Metal external-resource integration | Do not promise CUDA parity on macOS; investigate IOSurface, shared events, and other Metal-supported interop instead. |
@@ -615,7 +664,8 @@ compute pass, and read back an offscreen result.
 - Add MSL/metallib packaging and loading.
 - Add pipeline creation, explicit binding layouts, function constants, and
   reflection validation.
-- Convert the existing mesh shader into a reusable pipeline description.
+- Add a capability-gated object/mesh shader example as a reusable pipeline
+  description when a mesh-capable verification machine is available.
 
 **Done when:** vertex/fragment, compute, and object/mesh/fragment pipelines can
   be created by name and validated against their resource layouts.
@@ -633,20 +683,46 @@ typed command buffers and encoders without requiring raw Metal calls.
 ### Phase 5 — Renderer, scene, and built-in features
 
 - Add scene/object/mesh/light managers.
-- Port Forward and Forward+.
+- Port the renderer's Forward and Forward+ submission paths.
 - Add built-in materials, shadows, clustering, billboards, and text.
 - Add GPU-driven and meshlet examples.
 
-**Done when:** a small scene can follow the vkkk-style application flow using
-only the C++ wrapper and renderer modules.
+**Current status:** Plan 07 and the first Plan 08 scene/asset slice are
+implemented in Swift and exposed through the generated C++ header. The
+remaining renderer integration, clustered-light compute, shadows, built-in
+material families, billboards, text, and meshlet asset flow are deferred.
+These are wrapper-owned follow-ups in [Plan 15](docs/plans/15-renderer-completion.md)
+and [Plan 16](docs/plans/16-scene-assets-and-built-in-shaders-completion.md).
 
-### Phase 6 — Viewport, picking, and integrations
+**Done when:** a small scene can follow the vkkk-style application flow using
+only the C++ wrapper and renderer modules, with native Metal paths selected
+when available.
+
+### Phase 6 — Viewport, picking, and optional integrations
 
 - Add the feature-composed viewport.
 - Add axes, grid, object picking, and vertex picking.
-- Add AppKit/GLFW/Qt, ImGui, font, and optional Python modules as separate
-  targets.
-- Add Metal-native tile, memoryless, ray-tracing, and profiling examples.
+- Add host, GUI/text, content-pipeline, Python, and external-resource modules
+  as separate optional targets.
+- Add Metal-native tile, memoryless, ray-tracing, and profiling examples as
+  wrapper-owned capability work and verify them separately.
+
+**Current status:** Plan 09 provides the Swift-first viewport lifecycle,
+explicit picking/scene/overlay phase boundaries, offscreen RGBA8 ID/depth
+targets, stable object IDs, and polled object/vertex readback. GPU drawing for
+axes, grids, labels, and automatic scene ID passes remains deferred. Plan 10
+adds opt-in AppKit/CAMetalLayer and MTKView adapters plus toolkit-neutral input
+events. Viewport completion is the wrapper-owned
+[Plan 17](docs/plans/17-viewport-and-picking-completion.md). Native host,
+GUI/text, asset-pipeline, and language/external-resource work is separated
+into [Plans 19](docs/plans/19-native-host-integrations.md),
+[Plan 20](docs/plans/20-gui-and-text-integrations.md),
+[Plan 21](docs/plans/21-asset-pipeline-integrations.md), and
+[Plan 22](docs/plans/22-language-and-external-resource-integrations.md).
+Plan 11 adds
+validation tests, an opt-in installed package consumer flow, and a
+capability-matrix record template; the complete verification track is
+[Plan 18](docs/plans/18-validation-examples-and-release.md).
 
 **Done when:** the library has a usable editor-style viewport and each
   optional integration can be enabled without expanding the core dependency
@@ -670,18 +746,16 @@ only the C++ wrapper and renderer modules.
 
 ## 9. Immediate next step
 
-The first implementation slice should be a Swift library skeleton containing:
+The baseline slices for Plans 01–11 are present; runtime verification and the
+follow-up features remain pending. The next work should proceed through the
+dependency-ordered plans in [`docs/plans/README.md`](docs/plans/README.md):
 
-1. Swift `DeviceCapabilities`.
-2. Swift `Device` and `CommandQueue`.
-3. `mt::Surface` for an offscreen target and one AppKit/`CAMetalLayer`
-   adapter.
-4. Swift `CommandBuffer`, focused encoders, and optional `Frame` exposed
-   through generated C++ bindings.
-5. A small C++ consumer example exercising the first render path.
+1. Complete wrapper-owned Plans 12–17.
+2. Complete verification and release evidence in Plan 18 on a
+   Metal-capable machine.
+3. Add optional integrations from Plans 19–22 only when a concrete host,
+   content, GUI, scripting, or external-resource consumer requires them.
 
-That slice will settle the most important early choices—native binding
-strategy, public handle ownership, Metal shader packaging, and frame
-semantics—before scene, renderer, and viewport APIs are added. It will also
-prove that an external C++ project can use the Swift-backed `mt` module
-without adopting a synthetic Vulkan-style context.
+These steps preserve the native Metal ownership model and prove that an
+external C++ project can use the Swift-backed `mt` module without adopting a
+synthetic Vulkan-style context.

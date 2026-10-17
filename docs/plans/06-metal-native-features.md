@@ -1,6 +1,6 @@
 # Plan 06 — Metal-native GPU features
 
-**Status:** proposed
+**Status:** implemented — Swift-first capability-gated slice; verification pending
 **Parent:** [`METAL_WRAPPER_PLAN.md`](../../METAL_WRAPPER_PLAN.md)
 **Dependencies:** [Plan 02](02-device-and-capabilities.md), [Plan 03](03-commands-surfaces-and-frames.md), [Plan 04](04-resources-memory-and-sync.md), [Plan 05](05-shaders-pipelines-and-bindings.md)
 
@@ -239,4 +239,50 @@ features, and ICB command types.
 - Ray tracing is optional and does not contaminate baseline initialization.
 - Device-specific limits are visible to applications and pipeline planning.
 - Unsupported features produce actionable errors rather than silent downgrades.
+
+## Implementation in this slice
+
+Implemented in the Swift core and exposed through the generated C++ header:
+
+- feature-specific capability records for mesh shaders, argument buffers,
+  indirect command buffers, tile shaders, and ray tracing;
+- `Extent3D` and native `drawMeshThreadgroups` encoding;
+- CPU-encoded `ArgumentBuffer` objects backed by Metal argument encoders,
+  including buffer, texture, and sampler arrays by explicit index;
+- `IndirectCommandBuffer` creation, reset, render/compute command access,
+  command encoding, and render/compute encoder execution;
+- tile pipeline descriptors and tile resource/dispatch methods on
+  `RenderEncoder`;
+- command-buffer GPU start/end/execution timing and encoder debug signposts;
+- organized C++ facade headers under `include/mt/` and capability-specific
+  API-shape tests under `tests/unit/metal/`;
+- Swift capability, argument-buffer, ICB, and descriptor validation tests.
+
+The API keeps Metal's native feature boundaries visible. Argument buffers are
+not presented as descriptor sets, ICB command types are explicitly selected,
+and mesh/tile paths fail through capability checks rather than silently
+falling back to indexed rendering.
+
+## Deferred follow-up
+
+- Acceleration-structure build/update descriptors, intersection-function
+  tables, ray dispatch, and motion support belong to
+  [Plan 14 — Metal-native capabilities completion](14-metal-native-capabilities-completion.md).
+- Counter sample buffers and timestamp/counter collection beyond command-buffer
+  GPU timing belong to Plan 14.
+- Device-specific mesh output/payload limits and tile imageblock limits that
+  are not exposed consistently by the minimum deployment SDK are resolved by
+  Plan 14; unknown limits must no longer be reported as valid zero limits.
+- GPU culling/LOD examples and full meshlet resource helpers belong to
+  [Plan 15 — Renderer completion](15-renderer-completion.md) and
+  [Plan 16 — Scene, assets, and built-in shaders completion](16-scene-assets-and-built-in-shaders-completion.md).
+- Nested argument-buffer value encoding and persistent argument-buffer tables
+  belong to
+  [Plan 13 — Shaders, pipelines, and bindings completion](13-shaders-pipelines-and-bindings-completion.md).
+- Capability-specific fallback renderers belong to Plan 15, which consumes
+  these extensions and reports its selected path.
+
+Build, C++ ABI, shader compilation, and runtime verification are intentionally
+pending on a Metal-capable macOS machine; runtime capability evidence belongs
+to [Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
 

@@ -1,8 +1,8 @@
 # Plan 11 — Validation, examples, and external-consumer verification
 
-**Status:** proposed
+**Status:** in progress — validation harness and consumer slice; runtime verification pending
 **Parent:** [`METAL_WRAPPER_PLAN.md`](../../METAL_WRAPPER_PLAN.md)
-**Dependencies:** all implemented modules
+**Dependencies:** baseline slices of Plans 01–10
 
 ## Goal
 
@@ -198,4 +198,50 @@ Record device and build configuration with measurements.
 - Lifetime, resize, drawable-loss, and command errors are covered.
 - Examples show both the direct Metal-style API and optional higher-level
   renderer/viewport APIs.
+
+## Implementation in this slice
+
+The repository now has the first validation harness:
+
+- existing C++ public-header and module API-shape tests cover the generated
+  C++ facade through Plans 01–10;
+- `ValidationTests.swift` covers device enumeration, runtime capability
+  relationships, invalid descriptor rejection, and actionable shutdown
+  failures;
+- `tests/consumer/installed` is a standalone `find_package(mt CONFIG REQUIRED)`
+  consumer;
+- `tests/consumer/run_installed_consumer.cmake` can install the current build,
+  configure/build the standalone consumer, and run it;
+- `MT_BUILD_INSTALLED_CONSUMER` exposes that package check as an opt-in CTest
+  entry;
+- `examples/consumer_smoke` and `examples/README.md` establish the external
+  consumer/example boundary and capability requirements.
+
+The installed-consumer flow is opt-in because it performs an install and a
+second configure/build. It is deliberately not run as part of the default
+core test tree.
+
+## Intentionally deferred
+
+- Deterministic offscreen triangle, texture, compute-image, MSAA, depth,
+  blending, and full renderer example executables.
+- Windowed AppKit/MTKView examples and GUI/font/Python examples.
+- Runtime mesh-shader, argument-buffer, ICB, tile, ray-tracing, and
+  Forward+ capability matrix results.
+- CI jobs for Debug/Release, package installation, Metal API validation,
+  Xcode GPU capture, and multiple device families.
+- Performance measurements and persistent result storage.
+
+Those checks require a Metal-capable verification machine and should be added
+as consumers of the current installed package rather than weakening the
+core/offscreen dependency boundary. They are owned by
+[Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
+Windowed examples are verified through Plan 18 but implemented as optional
+host consumers in
+[Plan 19 — Native host integrations](19-native-host-integrations.md).
+
+Build, package installation, shader compilation, and runtime verification
+remain pending on a suitable macOS machine. Plan 18 is verification work; it
+does not make the deferred renderer, scene, viewport, or Metal-native
+features complete.
 

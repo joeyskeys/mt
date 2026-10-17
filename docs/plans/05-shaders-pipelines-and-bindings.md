@@ -1,6 +1,6 @@
 # Plan 05 — MSL, shader libraries, pipelines, and bindings
 
-**Status:** proposed
+**Status:** implemented — Swift-first implementation; verification pending
 **Parent:** [`METAL_WRAPPER_PLAN.md`](../../METAL_WRAPPER_PLAN.md)
 **Dependencies:** [Plan 01](01-build-and-cpp-abi.md), [Plan 02](02-device-and-capabilities.md), [Plan 04](04-resources-memory-and-sync.md)
 
@@ -49,6 +49,23 @@ The build system should provide a helper that:
 
 Runtime source compilation should be optional. A production application should
 not need an Xcode installation or runtime compiler to load its shaders.
+
+The installed CMake helper is used from a consuming project like this:
+
+```cmake
+find_package(mt CONFIG REQUIRED)
+
+mt_add_metallib(my_shaders
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/main.metal"
+    INSTALL_DESTINATION share/my_app/shaders
+)
+add_dependencies(my_app my_shaders)
+```
+
+The helper emits one AIR file per source and links them into a `.metallib`
+with the selected SDK and deployment target. It is a packaging/build helper;
+the wrapper's runtime source-compilation path remains useful for development
+and diagnostics.
 
 ## Public object model
 
@@ -244,4 +261,48 @@ assume a Vulkan/GLSL std140 or std430 layout is automatically identical.
 - Function constants and parameter updates work without Vulkan push constants.
 - Pipeline cache entries are invalidated for incompatible devices or formats.
 - Release packaging can ship precompiled metallib without runtime compilation.
+
+## Implementation in this slice
+
+Implemented in Swift:
+
+- MSL source and precompiled metallib loading through `Device`;
+- named `ShaderLibrary` and `ShaderFunction` wrappers, including function
+  enumeration, stage inspection, diagnostics, and function-constant
+  specialization;
+- `BindingLayout` metadata with duplicate-slot validation and
+  `PipelineReflection` checks against Metal argument reflection;
+- render pipeline descriptors for vertex/fragment and capability-gated
+  object/mesh/fragment pipelines, including vertex descriptors, raster state,
+  blending, attachment formats, sample counts, and indirect-command support;
+- compute pipeline descriptors with threadgroup-size metadata;
+- direct render/compute pipeline and resource-slot binding on the focused
+  encoders;
+- a small `ParameterBlock` for Metal's inline `set*Bytes` path. Larger
+  parameter data should use Plan 04 buffer slices;
+- C++ facade headers and API-shape tests under `include/mt/` and
+  `tests/unit/shaders/`;
+- a CMake `mt_add_metallib()` helper for reproducible `xcrun metal` and
+  `xcrun metallib` packaging, installed with the CMake package.
+
+The public C++ surface remains generated from the Swift module. The
+source-controlled headers only include the generated aliases and do not
+duplicate Metal ownership or implementation logic.
+
+## Follow-up ownership
+
+- Plan 13 implements the persistent/in-memory pipeline caches, device/SDK
+  invalidation, Metal binary archives, dynamic-library composition, full
+  argument-buffer tables, stronger reflection validation, and depth/stencil
+  state objects. Runtime verification remains tracked by Plan 18.
+- The dedicated tile-pipeline extension belongs to
+  [Plan 14 — Metal-native capabilities completion](14-metal-native-capabilities-completion.md).
+- Material parameter tables belong to Plan 16.
+- The built-in mesh/object-shader MSL fixture is implemented by Plan 13;
+  runtime coverage belongs to
+  [Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
+
+Build, C++ ABI, MSL compilation, and runtime verification are intentionally
+pending on a Metal-capable macOS machine. Package and runtime evidence is
+tracked in Plan 18.
 

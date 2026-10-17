@@ -7,3 +7,14 @@ add_test(
     COMMAND mt-test-external-consumer
 )
 
+if(MT_BUILD_INSTALLED_CONSUMER)
+    add_test(
+        NAME mt.consumer.installed
+        COMMAND ${CMAKE_COMMAND}
+            -DMT_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+            -DMT_BINARY_DIR=${CMAKE_BINARY_DIR}
+            -DMT_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_installed_consumer.cmake
+    )
+endif()
+

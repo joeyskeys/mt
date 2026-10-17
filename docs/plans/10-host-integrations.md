@@ -1,6 +1,6 @@
 # Plan 10 — Host, window, UI, font, and interop integrations
 
-**Status:** proposed
+**Status:** implemented — optional AppKit/MetalKit and input slice; verification pending
 **Parent:** [`METAL_WRAPPER_PLAN.md`](../../METAL_WRAPPER_PLAN.md)
 **Dependencies:** [Plan 01](01-build-and-cpp-abi.md), plus only the core modules required by each adapter
 
@@ -187,4 +187,63 @@ Each optional target must:
 - UI/font integrations do not take ownership of the device or frame loop.
 - Optional target failures do not break offscreen core builds.
 - Every interop path documents ownership and synchronization.
+
+## Implementation in this slice
+
+The core remains free of AppKit, MetalKit, ImGui, font, Python, GLFW, and Qt
+dependencies. Plan 10 adds two opt-in Swift targets:
+
+```text
+mt::mt
+  ├── mt::mt-appkit   (MT_BUILD_APPKIT=ON)
+  └── mt::mt-mtkview  (MT_BUILD_MTKVIEW=ON)
+```
+
+The corresponding SwiftPM products are `MTAppKit` and `MTMetalKit`; neither is
+required when an application uses only `MTCore`.
+
+`mt-appkit` provides `AppKitSurfaceConfiguration` and
+`AppKitSurfaceAdapter`. The adapter accepts borrowed opaque `NSView` or
+`CAMetalLayer` handles, configures the layer with an explicit `Device`,
+pixel format, drawable size, Retina scale, framebuffer policy, transaction
+mode, and display-sync policy, then delegates drawable/render-pass ownership
+to the existing `Surface`. It exposes no AppKit or Objective-C protocol types
+in the generated C++ API.
+
+`mt-mtkview` provides `MTKViewSurfaceConfiguration` and
+`MTKViewSurfaceAdapter`. It accepts a borrowed `MTKView` handle, applies the
+device and drawable configuration, and maps its CAMetalLayer to the same
+layer-backed `Surface` contract. The adapter does not create a queue, run a
+delegate, present frames implicitly, or own the host event loop.
+
+The core now also exposes `InputEventKind`, `InputModifiers`, and
+`HostInputEvent` through `mt/input.hpp`. `Viewport.handleInput` consumes these
+toolkit-neutral pointer, button, scroll, key, resize, close, and focus events;
+AppKit or another host translates native events into this value contract.
+
+Optional CMake targets are disabled by default and install their generated
+Swift C++ headers and facade headers only when enabled. Optional C++ API-shape
+tests are registered under `tests/unit/host`.
+
+## Intentionally deferred
+
+- A full AppKit `NSView` subclass or event-loop/delegate implementation
+  belongs to
+  [Plan 19 — Native host integrations](19-native-host-integrations.md).
+- GLFW and Qt adapters belong to Plan 19 and remain demand-driven.
+- ImGui initialization/render helpers and backend version management belong to
+  [Plan 20 — GUI and text integrations](20-gui-and-text-integrations.md).
+- CoreText/FreeType font loading, glyph atlases, and text mesh generation
+  belong to Plan 20.
+- Python bindings belong to
+  [Plan 22 — Language and external-resource integrations](22-language-and-external-resource-integrations.md)
+  and must consume the stabilized installed C++ API.
+- IOSurface/media interop, shared-event policies for external producers, and
+  imported texture ownership rules belong to Plan 22.
+- Windowed examples and host runtime verification belong to Plans 19 and 18
+  respectively.
+
+Build, C++ ABI generation, and optional-framework verification remain pending
+on a suitable macOS machine; the verification workflow is tracked in
+[Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
 

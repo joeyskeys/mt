@@ -1,4 +1,12 @@
 add_subdirectory(core)
 add_subdirectory(commands)
 add_subdirectory(resources)
+add_subdirectory(shaders)
+add_subdirectory(metal)
+add_subdirectory(renderer)
+add_subdirectory(scene)
+add_subdirectory(viewport)
+if(MT_BUILD_APPKIT OR MT_BUILD_MTKVIEW)
+    add_subdirectory(host)
+endif()
 

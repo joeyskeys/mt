@@ -1,6 +1,7 @@
 @PACKAGE_INIT@
 
 include("${CMAKE_CURRENT_LIST_DIR}/mtTargets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/mtMetal.cmake")
 
 check_required_components(mt)
 

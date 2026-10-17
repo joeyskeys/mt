@@ -241,10 +241,13 @@ Implemented in Swift:
 - Swift runtime tests plus generated-header compile coverage for the new API.
 
 Depth/stencil attachments and basic resource copy operations are provided by
-Plan 04; drawable readback and full subresource operations remain deferred.
+Plan 04. Plan 12 now supplies the initial drawable readback, full
+subresource-transfer, and completion-lifetime contract.
 C++ callback registration remains represented by completion-status polling and
-retained completion errors until a callback shape supported cleanly by
-Swift/C++ interop is selected. Build and runtime verification remains
-intentionally pending on a Metal-capable macOS machine. The triangle consumer
-is likewise deferred until Plan 05 provides shader and pipeline APIs.
+retained completion errors; a callback shape supported cleanly by Swift/C++
+interop remains intentionally out of the core ABI.
+Build and runtime verification remains intentionally pending on a Metal-capable
+macOS machine. The triangle consumer is likewise deferred until Plan 05
+provides shader and pipeline APIs, with runtime evidence tracked in
+[Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
 

@@ -1,6 +1,6 @@
 # Plan 07 — Renderer layer
 
-**Status:** proposed
+**Status:** implemented — Swift-first renderer slice; verification pending
 **Parent:** [`METAL_WRAPPER_PLAN.md`](../../METAL_WRAPPER_PLAN.md)
 **Dependencies:** [Plan 03](03-commands-surfaces-and-frames.md), [Plan 04](04-resources-memory-and-sync.md), [Plan 05](05-shaders-pipelines-and-bindings.md), [Plan 06](06-metal-native-features.md)
 
@@ -202,4 +202,47 @@ the command path.
 - Mesh and GPU-driven paths use native features when supported and report
   fallbacks otherwise.
 - Resize and in-flight command-buffer lifetimes are safe.
+
+## Implementation in this slice
+
+Implemented as a Swift renderer layer above the existing Metal wrappers:
+
+- `Renderer` with explicit Forward and Forward+ modes; it receives a
+  caller-owned `Device`, `CommandBuffer`, and `RenderPassDescriptor` and does
+  not create a window, surface, or command queue;
+- `RenderView`, `RendererStatistics`, and `ForwardPlusConfiguration` value
+  contracts;
+- `RenderBatch` for explicit vertex/index data, pipeline selection,
+  transparency, labels, and optional mesh/indirect submission metadata;
+- indexed and non-indexed draw encoding through the existing render encoder;
+- capability-aware mesh and indirect paths with explicit fallback pipelines;
+  unsupported paths fail rather than silently changing semantics;
+- resize generation tracking and Forward+ cluster-count planning without
+  taking ownership of size-dependent surface targets;
+- renderer lifecycle, batch registration, statistics, and API-shape tests.
+
+The C++ facade is generated from the Swift module and is organized under
+`include/mt/renderer.hpp`. The renderer is intentionally a small submission
+layer; scene, material, light, meshlet, and built-in shader ownership remain
+with Plan 08.
+
+## Deferred follow-up
+
+- GPU light-cluster preparation and consumption through built-in compute
+  shaders; Plan 08 supplies the light data and shader/layout contracts. The
+  renderer implementation belongs to
+  [Plan 15 — Renderer completion](15-renderer-completion.md).
+- Shadow, depth-prepass, transparent sorting, lines, points, billboards, and
+  overlay pass scheduling belong to Plan 15.
+- Material/argument-buffer binding tables and pipeline caches belong to Plans
+  13, 15, and 16.
+- Full GPU culling/LOD generation and meshlet upload management belong to
+  Plans 15 and 16.
+- Persistent renderer statistics and GPU counter integration beyond the
+  command-buffer timing exposed by Plan 06 belong to Plan 15.
+
+Build, C++ ABI, shader compilation, and runtime verification are intentionally
+pending on a Metal-capable macOS machine; renderer evidence and examples are
+tracked in
+[Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
 

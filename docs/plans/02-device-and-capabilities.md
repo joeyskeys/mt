@@ -216,6 +216,11 @@ Implemented in Swift:
 - CMake Swift/C++ interoperability and generated-header integration;
 - Swift-side capability tests and C++ header/consumer test targets.
 
+Richer device-limit provenance and Metal-native capability completion belong
+to [Plan 14 — Metal-native capabilities completion](14-metal-native-capabilities-completion.md).
+Core ABI/package decisions belong to
+[Plan 12 — Core ABI, resources, and lifetime completion](12-core-abi-resources-and-lifetime.md).
 Build and runtime verification is intentionally pending on a Metal-capable
-macOS machine.
+macOS machine; that evidence is tracked in
+[Plan 18 — Validation, examples, and release evidence](18-validation-examples-and-release.md).
 
