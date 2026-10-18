@@ -132,6 +132,360 @@ final class ViewportCompletionTests: XCTestCase {
         XCTAssertTrue(viewport.pickingNormalReadbackTexture != nil)
     }
 
+    func testABufferPickingSelectionAndCapacityAreObservable() {
+        guard let device = Device.systemDefault() else {
+            return
+        }
+        let viewport = Viewport(device: device)
+        XCTAssertTrue(viewport.resize(width: 16, height: 8))
+        let acceleration = viewport.configurePicking(
+            ViewportPickingConfiguration(
+                preferABuffer: true,
+                aBufferNodesPerPixel: 4,
+                aBufferMaxNodes: 1024
+            )
+        )
+        XCTAssertEqual(acceleration.selectedPath, .baseline)
+        XCTAssertEqual(viewport.pickingSelection.requestedPath, .aBuffer)
+        if viewport.pickingSelection.selectedPath == .aBuffer {
+            XCTAssertTrue(viewport.makePickingRenderPass() != nil)
+            XCTAssertEqual(viewport.aBufferNodeCapacity, 16 * 8 * 4)
+        } else {
+            XCTAssertTrue(viewport.pickingSelection.usedFallback)
+            XCTAssertTrue(viewport.pickingSelection.fallbackAvailable)
+        }
+    }
+
+    func testABufferConfigurationRejectsInvalidCapacity() {
+        guard let device = Device.systemDefault() else {
+            return
+        }
+        let viewport = Viewport(device: device)
+        XCTAssertTrue(viewport.resize(width: 8, height: 8))
+        _ = viewport.configurePicking(
+            ViewportPickingConfiguration(
+                preferABuffer: true,
+                aBufferNodesPerPixel: 0
+            )
+        )
+        XCTAssertEqual(viewport.pickingSelection.requestedPath, .aBuffer)
+        XCTAssertEqual(
+            viewport.pickingSelection.selectedPath,
+            .baseline
+        )
+        XCTAssertEqual(
+            viewport.pickingSelection.fallbackReason,
+            .invalidRequest
+        )
+    }
+
+    func testABufferFallsBackWhenTheExtentExceedsItsConfiguredNodeLimit() {
+        guard let device = Device.systemDefault() else {
+            return
+        }
+        let viewport = Viewport(device: device)
+        XCTAssertTrue(viewport.resize(width: 16, height: 8))
+        _ = viewport.configurePicking(
+            ViewportPickingConfiguration(
+                preferABuffer: true,
+                aBufferNodesPerPixel: 8,
+                aBufferMaxNodes: 1
+            )
+        )
+        guard viewport.pickingSelection.selectedPath == .aBuffer else {
+            return
+        }
+        XCTAssertNotNil(viewport.makePickingRenderPass())
+        XCTAssertEqual(viewport.pickingSelection.selectedPath, .baseline)
+        XCTAssertEqual(
+            viewport.pickingSelection.fallbackReason,
+            .resourcesUnavailable
+        )
+    }
+
+    func testABufferReturnsOverlappingObjectHitsWhenSupported() {
+        guard let device = Device.systemDefault(),
+              let fixture = ViewportFixture(
+                  device: device,
+                  width: 64,
+                  height: 64
+              ) else {
+            return
+        }
+        _ = fixture.viewport.configurePicking(
+            ViewportPickingConfiguration(
+                preferABuffer: true,
+                aBufferNodesPerPixel: 4,
+                aBufferMaxNodes: 32_768
+            )
+        )
+        guard fixture.viewport.pickingSelection.selectedPath == .aBuffer
+        else {
+            return
+        }
+        XCTAssertTrue(
+            fixture.scene.addObject(
+                SceneObject(
+                    name: "fixture.triangle.overlap",
+                    meshName: "fixture.triangle",
+                    transform: Transform.identity(),
+                    materialID: 0,
+                    visibilityMask: UInt32.max,
+                    enabled: true
+                )
+            )
+        )
+        XCTAssertEqual(
+            fixture.viewport.synchronizeSceneObjectIDs(fixture.scene),
+            2
+        )
+        guard let queue = device.createCommandQueue(),
+              let commandBuffer = queue.makeCommandBuffer() else {
+            return
+        }
+        XCTAssertTrue(
+            fixture.viewport.recordPicking(
+                commandBuffer,
+                scene: fixture.scene,
+                drawables: fixture.drawables,
+                mode: .object
+            )
+        )
+        XCTAssertTrue(
+            fixture.viewport.schedulePickReadback(
+                commandBuffer,
+                request: ViewportPickRequest(
+                    mode: .object,
+                    x: 32,
+                    y: 32,
+                    objectID: 0
+                )
+            )
+        )
+        XCTAssertTrue(commandBuffer.commit())
+        commandBuffer.waitUntilCompleted()
+        guard let result = fixture.viewport.pollPickResult() else {
+            XCTFail("The completed A-buffer pick did not produce a result.")
+            return
+        }
+        XCTAssertTrue(result.usedABuffer)
+        XCTAssertGreaterThanOrEqual(result.hitCount, 2)
+        XCTAssertFalse(result.overflowed)
+        XCTAssertNotNil(result.hit(at: 0))
+        XCTAssertNotNil(result.hit(at: 1))
+    }
+
+    func testABufferReportsOverflowForAFullBoundedNodePool() {
+        guard let device = Device.systemDefault(),
+              let fixture = ViewportFixture(
+                  device: device,
+                  width: 64,
+                  height: 64
+              ) else {
+            return
+        }
+        for index in 1...9 {
+            XCTAssertTrue(
+                fixture.scene.addObject(
+                    SceneObject(
+                        name: "fixture.overflow.\(index)",
+                        meshName: "fixture.triangle",
+                        transform: Transform.identity(),
+                        materialID: 0,
+                        visibilityMask: UInt32.max,
+                        enabled: true
+                    )
+                )
+            )
+        }
+        _ = fixture.viewport.configurePicking(
+            ViewportPickingConfiguration(
+                preferABuffer: true,
+                aBufferNodesPerPixel: 1,
+                aBufferMaxNodes: 4096
+            )
+        )
+        guard fixture.viewport.pickingSelection.selectedPath == .aBuffer
+        else {
+            return
+        }
+        XCTAssertEqual(
+            fixture.viewport.synchronizeSceneObjectIDs(fixture.scene),
+            10
+        )
+        guard let queue = device.createCommandQueue(),
+              let commandBuffer = queue.makeCommandBuffer() else {
+            return
+        }
+        XCTAssertTrue(
+            fixture.viewport.recordPicking(
+                commandBuffer,
+                scene: fixture.scene,
+                drawables: fixture.drawables,
+                mode: .object
+            )
+        )
+        XCTAssertTrue(
+            fixture.viewport.schedulePickReadback(
+                commandBuffer,
+                request: ViewportPickRequest(
+                    mode: .object,
+                    x: 32,
+                    y: 32,
+                    objectID: 0
+                )
+            )
+        )
+        XCTAssertTrue(commandBuffer.commit())
+        commandBuffer.waitUntilCompleted()
+        guard let result = fixture.viewport.pollPickResult() else {
+            XCTFail("The completed A-buffer overflow pick did not produce a result.")
+            return
+        }
+        XCTAssertTrue(result.usedABuffer)
+        XCTAssertTrue(result.overflowed)
+    }
+
+    func testABufferVertexPickingKeepsMultipleVerticesForOneObject() {
+        guard let device = Device.systemDefault(),
+              let fixture = ViewportFixture(
+                  device: device,
+                  width: 64,
+                  height: 64
+              ) else {
+            return
+        }
+        let points = Mesh(name: "fixture.overlap.points")
+        for _ in 0..<2 {
+            XCTAssertTrue(
+                points.appendVertex(
+                    MeshVertex(
+                        position: Vector3(x: 0, y: 0, z: 0),
+                        normal: Vector3(x: 0, y: 0, z: 1),
+                        texcoord: Vector2(x: 0, y: 0)
+                    )
+                )
+            )
+        }
+        XCTAssertTrue(fixture.drawables.addMesh(points))
+        XCTAssertTrue(
+            fixture.scene.addObject(
+                SceneObject(
+                    name: "fixture.overlap.points",
+                    meshName: points.name,
+                    transform: Transform.identity(),
+                    materialID: 0,
+                    visibilityMask: UInt32.max,
+                    enabled: true
+                )
+            )
+        )
+        _ = fixture.viewport.configurePicking(
+            ViewportPickingConfiguration(
+                preferABuffer: true,
+                aBufferNodesPerPixel: 4,
+                aBufferMaxNodes: 16_384,
+                vertexPointSize: 5
+            )
+        )
+        guard fixture.viewport.pickingSelection.selectedPath == .aBuffer
+        else {
+            return
+        }
+        XCTAssertEqual(
+            fixture.viewport.synchronizeSceneObjectIDs(fixture.scene),
+            2
+        )
+        let pointsID = fixture.viewport.objectID("fixture.overlap.points")
+        guard let queue = device.createCommandQueue(),
+              let commandBuffer = queue.makeCommandBuffer() else {
+            return
+        }
+        XCTAssertTrue(
+            fixture.viewport.recordPicking(
+                commandBuffer,
+                scene: fixture.scene,
+                drawables: fixture.drawables,
+                mode: .vertex
+            )
+        )
+        XCTAssertTrue(
+            fixture.viewport.schedulePickReadback(
+                commandBuffer,
+                request: ViewportPickRequest(
+                    mode: .vertex,
+                    x: 32,
+                    y: 32,
+                    objectID: pointsID
+                )
+            )
+        )
+        XCTAssertTrue(commandBuffer.commit())
+        commandBuffer.waitUntilCompleted()
+        guard let result = fixture.viewport.pollPickResult() else {
+            XCTFail("The completed A-buffer vertex pick did not produce a result.")
+            return
+        }
+        XCTAssertTrue(result.usedABuffer)
+        XCTAssertGreaterThanOrEqual(result.hitCount, 2)
+        XCTAssertEqual(result.hit(at: 0)?.objectID, pointsID)
+        XCTAssertEqual(result.hit(at: 1)?.objectID, pointsID)
+    }
+
+    func testABufferReadbackRetainsItsExtentAcrossResize() {
+        guard let device = Device.systemDefault(),
+              let fixture = ViewportFixture(
+                  device: device,
+                  width: 64,
+                  height: 64
+              ) else {
+            return
+        }
+        _ = fixture.viewport.configurePicking(
+            ViewportPickingConfiguration(
+                preferABuffer: true,
+                aBufferNodesPerPixel: 4,
+                aBufferMaxNodes: 32_768
+            )
+        )
+        guard fixture.viewport.pickingSelection.selectedPath == .aBuffer
+        else {
+            return
+        }
+        guard let queue = device.createCommandQueue(),
+              let commandBuffer = queue.makeCommandBuffer() else {
+            return
+        }
+        XCTAssertTrue(
+            fixture.viewport.recordPicking(
+                commandBuffer,
+                scene: fixture.scene,
+                drawables: fixture.drawables
+            )
+        )
+        XCTAssertTrue(
+            fixture.viewport.schedulePickReadback(
+                commandBuffer,
+                request: ViewportPickRequest(
+                    mode: .object,
+                    x: 32,
+                    y: 32,
+                    objectID: 0
+                )
+            )
+        )
+        XCTAssertTrue(fixture.viewport.resize(width: 32, height: 32))
+        XCTAssertTrue(commandBuffer.commit())
+        commandBuffer.waitUntilCompleted()
+        guard let result = fixture.viewport.pollPickResult() else {
+            XCTFail("The resized in-flight A-buffer pick did not produce a result.")
+            return
+        }
+        XCTAssertTrue(result.usedABuffer)
+        XCTAssertEqual(result.x, 32)
+        XCTAssertEqual(result.y, 32)
+    }
+
     func testFeatureExtensionUsesValueOnlyRegistration() {
         guard let device = Device.systemDefault() else {
             return

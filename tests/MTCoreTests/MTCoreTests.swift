@@ -19,13 +19,15 @@ final class MTCoreTests: XCTestCase {
             maxBufferLength: 1024 * 1024,
             maxArgumentBufferSamplerCount: 16,
             maxTextureDimension2D: 16384,
-            supportedSampleCounts: [1, 2, 4, 8]
+            supportedSampleCounts: [1, 2, 4, 8],
+            fragmentAtomics: true
         )
 
         XCTAssertTrue(capabilities.supports(.argumentBuffers))
         XCTAssertTrue(capabilities.supports(.argumentBufferTier2))
         XCTAssertTrue(capabilities.supports(.meshShaders))
         XCTAssertTrue(capabilities.supports(.rayTracing))
+        XCTAssertTrue(capabilities.supports(.fragmentAtomics))
     }
 
     func testDeviceEnumerationHasSafeNoDevicePath() {

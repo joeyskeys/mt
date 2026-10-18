@@ -114,6 +114,9 @@ lifecycle state, GPU axes/grid/label/point features, automatic scene
 object/vertex ID passes, deterministic CPU vertex selection, optional depth
 and normal attachments, capability-selected Metal acceleration metadata, and
 polled readback without owning a window, surface, command queue, or renderer.
+When fragment atomics are available, it also provides a bounded linked-list
+A-buffer path that returns overlapping object/vertex hits and reports node
+pool overflow explicitly; the RGBA8 path remains the fallback.
 Value-only feature extensions and an editor-style offscreen fixture are also
 provided for applications that need to compose custom viewport work.
 

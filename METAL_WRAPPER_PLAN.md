@@ -1,16 +1,53 @@
 # `mt` Metal C++ Wrapper — Feature and Implementation Plan
 
-This document translates the architecture described by
-[`vkkk/PROJECT_STRUCTURE.md`](../vkkk/PROJECT_STRUCTURE.md) into a macOS Metal
-library plan for `mt`.
+This document uses the architecture described by
+[`vkkk/PROJECT_STRUCTURE.md`](../vkkk/PROJECT_STRUCTURE.md) as a capability
+reference for a macOS Metal library plan for `mt`.
 
 The implementation-oriented module plans are indexed in
 [`docs/plans/README.md`](docs/plans/README.md).
 
-The goal is not to reproduce Vulkan terminology or to force Metal into a
-lowest-common-denominator API. The goal is to provide the same useful
-application-level capabilities as vkkk while making Metal-specific GPU
-features available through the normal API when the device supports them.
+The goal is not to reproduce Vulkan terminology, force Metal into a
+lowest-common-denominator API, or reproduce vkkk's public API one-to-one. The
+goal is to provide a useful graphics-oriented wrapper inspired by vkkk while
+making Metal-specific GPU features available through the normal API when the
+device supports them.
+
+## Scope and compatibility declaration
+
+`mt` is a Metal-native graphics wrapper, not a complete wrapper for every
+public Metal interface and not a source-compatible or behavior-identical port
+of vkkk.
+
+The project deliberately takes the spirit of vkkk—usable resources, command
+encoding, renderers, scenes, viewport features, picking, and optional host
+integrations—while redesigning those capabilities around Metal's object
+ownership, encoder, pass, storage, synchronization, and capability models.
+Equivalent application goals are more important than preserving vkkk type
+names, class hierarchies, lifecycle calls, extension mechanisms, or backend
+assumptions.
+
+The core scope is graphics-oriented:
+
+- Wrap the Metal facilities needed for ordinary and advanced graphics work,
+  including render/compute/blit submission, resources, shaders, pipelines,
+  synchronization, presentation, scene data, renderer policy, and viewport
+  behavior.
+- Expose Metal-specific graphics capabilities such as argument buffers, mesh
+  and object shaders, indirect command buffers, tile rendering, memoryless
+  attachments, ray-tracing graphics paths, counters, and SIMD features when
+  they are relevant to the wrapper's graphics workflows.
+- Keep non-graphics or highly specialized Metal services outside the core
+  unless a concrete graphics use case justifies adding them.
+- Add future interfaces based on demonstrated application needs and a
+  Metal-native ownership/API design, not because vkkk or the Metal SDK has a
+  corresponding name.
+
+The vkkk mapping in this document is therefore conceptual. It identifies
+useful capability coverage and design responsibilities; it does not promise a
+one-to-one class, function, enum, extension, or behavioral mapping. Optional
+integrations and platform-specific features may intentionally differ from
+vkkk when the native macOS/Metal solution is safer or more useful.
 
 ## 1. Target
 
@@ -24,8 +61,8 @@ macOS. It should provide:
 - Named buffers, textures, samplers, render targets, depth resources, meshes,
   pipelines, and compute resources.
 - Graphics, compute, mesh/object-shader, indirect, and GPU-driven rendering.
-- Renderer, scene/asset, and composable viewport layers corresponding to the
-  useful parts of vkkk.
+- Renderer, scene/asset, and composable viewport layers inspired by the useful
+  parts of vkkk.
 - Optional window, GUI, font, Python, and host-application integrations.
 - Explicit Metal capability discovery and access to Metal-native extensions.
 
@@ -158,9 +195,14 @@ Reference material for this model:
 - [Mixing Swift and C++](https://swift.org/documentation/cxx-interop/)
 - [Calling Swift from C++](https://github.com/apple/swift/blob/main/docs/CppInteroperability/UserGuide-CallingSwiftFromC%2B%2B.md)
 
-## 3. vkkk capability baseline and Metal mapping
+## 3. vkkk capability reference and selective Metal mapping
 
-| vkkk capability | `mt` equivalent | Metal-specific design |
+The following table is a design cross-reference, not an API-compatibility
+matrix. Each row describes an application-level responsibility that `mt` may
+cover with a Metal-native interface; it does not require the names, lifetime
+rules, extension points, or exact behavior of the vkkk implementation.
+
+| vkkk reference capability | `mt` graphics-oriented treatment | Metal-specific design |
 | --- | --- | --- |
 | `vkkk::Context` responsibilities | `mt::Device`, `mt::CommandQueue`, `mt::Surface`, and optional `mt::FrameScheduler` | Split across Metal's native object graph; there is no required global `mt::Context`. |
 | Vulkan device and queue | `mt::Device` / `mt::CommandQueue` | `mt::Device` creates resources, pipeline states, and queues; a queue creates command buffers. |
@@ -473,20 +515,12 @@ These are first-class targets, not features to discard for portability:
 
 ### 4.8 Renderer layer
 
-Mirror the active vkkk renderer contract:
-
-```cpp
-class Renderer {
-public:
-    virtual ~Renderer() = default;
-    virtual bool initialize(Device&) = 0;
-    virtual void shutdown() = 0;
-    virtual void update() {}
-    virtual void record_commands(CommandBuffer&, uint32_t drawable_index) = 0;
-    virtual void on_resize(uint32_t width, uint32_t height) = 0;
-    virtual std::string_view type_name() const = 0;
-};
-```
+Provide a Metal-native renderer API covering the useful application
+responsibilities represented by vkkk's active renderer. Do not reproduce its
+virtual C++ class contract as a requirement. Renderer creation, pass
+scheduling, batch submission, capability-selected paths, statistics, and
+lifetime should follow the Swift/C++ interop boundary and Metal's explicit
+command-buffer ownership.
 
 Implement in stages:
 
@@ -505,7 +539,8 @@ hide queue and frame ownership inside a mandatory context object.
 
 ### 4.9 Scene, assets, and built-in shaders
 
-Provide the vkkk-level domain modules after the low-level API is usable:
+Provide graphics-oriented domain modules inspired by vkkk after the low-level
+API is usable:
 
 - `Scene` and `SceneObject` with named objects and transforms.
 - CPU-side `Mesh`, `MeshView`, `Lines`, `Points`, and curve types.
@@ -528,9 +563,11 @@ separate ABI contract rather than assumed to match Vulkan/GLSL layouts.
 
 ### 4.10 Viewport and picking
 
-Port the composable viewport model:
+Provide a Metal-native viewport model inspired by vkkk's composable viewport:
 
-- Compile-time or type-erased feature composition.
+- Feature composition compatible with the Swift/C++ interop boundary, such as
+  configured feature objects and value-based extension contracts rather than a
+  required C++ template/protocol bridge.
 - Feature hooks for attach, resize, update, and command recording.
 - Picking, scene, and screen-overlay phases.
 - Frame axes, grid, object picking, and vertex picking.

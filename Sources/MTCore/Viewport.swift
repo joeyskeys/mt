@@ -60,25 +60,73 @@ public struct ViewportAccelerationSelection {
     }
 }
 
+public enum ViewportPickingPath: Int32 {
+    case baseline
+    case aBuffer
+}
+
+public enum ViewportPickingFallbackReason: Int32 {
+    case none
+    case capabilityUnavailable
+    case resourcesUnavailable
+    case unsupportedReadback
+    case invalidRequest
+}
+
+public struct ViewportPickingSelection {
+    public var requestedPath: ViewportPickingPath
+    public var selectedPath: ViewportPickingPath
+    public var fallbackReason: ViewportPickingFallbackReason
+    public var fallbackAvailable: Bool
+
+    public init(
+        requestedPath: ViewportPickingPath,
+        selectedPath: ViewportPickingPath,
+        fallbackReason: ViewportPickingFallbackReason,
+        fallbackAvailable: Bool
+    ) {
+        self.requestedPath = requestedPath
+        self.selectedPath = selectedPath
+        self.fallbackReason = fallbackReason
+        self.fallbackAvailable = fallbackAvailable
+    }
+
+    public var usedFallback: Bool {
+        requestedPath != selectedPath
+    }
+}
+
 public struct ViewportPickingConfiguration {
     public var captureDepth: Bool
     public var captureNormal: Bool
     public var preferMemoryless: Bool
     public var preferTile: Bool
     public var preferMesh: Bool
+    public var preferABuffer: Bool
+    public var aBufferNodesPerPixel: UInt32
+    public var aBufferMaxNodes: UInt32
+    public var vertexPointSize: Float
 
     public init(
         captureDepth: Bool = false,
         captureNormal: Bool = false,
         preferMemoryless: Bool = false,
         preferTile: Bool = false,
-        preferMesh: Bool = false
+        preferMesh: Bool = false,
+        preferABuffer: Bool = false,
+        aBufferNodesPerPixel: UInt32 = 8,
+        aBufferMaxNodes: UInt32 = 1_048_576,
+        vertexPointSize: Float = 1
     ) {
         self.captureDepth = captureDepth
         self.captureNormal = captureNormal
         self.preferMemoryless = preferMemoryless
         self.preferTile = preferTile
         self.preferMesh = preferMesh
+        self.preferABuffer = preferABuffer
+        self.aBufferNodesPerPixel = aBufferNodesPerPixel
+        self.aBufferMaxNodes = aBufferMaxNodes
+        self.vertexPointSize = vertexPointSize
     }
 }
 
@@ -759,8 +807,8 @@ struct MTViewportPickingFrame {
     float4x4 modelViewProjection;
     uint objectID;
     uint mode;
+    float pointSize;
     uint reserved0;
-    uint reserved1;
 };
 
 struct MTViewportPickingVertex {
@@ -773,6 +821,9 @@ struct MTViewportPickingOutput {
     float4 position [[position]];
     float4 encodedID;
     float3 normal;
+    uint objectID [[flat]];
+    uint vertexID [[flat]];
+    float pointSize [[point_size]];
 };
 
 struct MTViewportPickingFragmentOutput {
@@ -800,6 +851,9 @@ vertex MTViewportPickingOutput mt_viewport_picking_vertex(
     uint value = frame.mode == 0u ? frame.objectID : vertexID + 1u;
     output.encodedID = mt_viewport_encode_id(value);
     output.normal = normalize(float3(vertices[vertexID].normal));
+    output.objectID = frame.objectID;
+    output.vertexID = vertexID;
+    output.pointSize = frame.pointSize;
     return output;
 }
 
@@ -813,6 +867,93 @@ fragment MTViewportPickingFragmentOutput
 mt_viewport_picking_normal_fragment(
     MTViewportPickingOutput input [[stage_in]]
 ) {
+    MTViewportPickingFragmentOutput output;
+    output.encodedID = input.encodedID;
+    float3 normal = normalize(input.normal);
+    output.encodedNormal = float4(normal * 0.5 + 0.5, 1.0);
+    return output;
+}
+
+struct MTViewportABufferNode {
+    uint objectID;
+    uint vertexID;
+    float depth;
+    uint next;
+    float3 normal;
+};
+
+struct MTViewportABufferParameters {
+    uint width;
+    uint height;
+    uint capacity;
+    uint reserved;
+};
+
+void mt_viewport_store_abuffer(
+    MTViewportPickingOutput input,
+    device atomic_uint *heads,
+    device atomic_uint *nodeHeader,
+    device MTViewportABufferNode *nodes,
+    constant MTViewportABufferParameters &parameters
+) {
+    const uint2 pixel = uint2(input.position.xy);
+    if (pixel.x >= parameters.width || pixel.y >= parameters.height) {
+        return;
+    }
+
+    const uint nodeIndex = atomic_fetch_add_explicit(
+        nodeHeader,
+        1u,
+        memory_order_relaxed
+    );
+    if (nodeIndex >= parameters.capacity) {
+        atomic_store_explicit(nodeHeader + 1, 1u, memory_order_relaxed);
+        return;
+    }
+
+    nodes[nodeIndex].objectID = input.objectID;
+    nodes[nodeIndex].vertexID = input.vertexID;
+    nodes[nodeIndex].depth = input.position.z;
+    nodes[nodeIndex].normal = input.normal;
+    nodes[nodeIndex].next = atomic_exchange_explicit(
+        heads + pixel.y * parameters.width + pixel.x,
+        nodeIndex,
+        memory_order_relaxed
+    );
+}
+
+fragment float4 mt_viewport_picking_abuffer_fragment(
+    MTViewportPickingOutput input [[stage_in]],
+    device atomic_uint *heads [[buffer(2)]],
+    device MTViewportABufferNode *nodes [[buffer(3)]],
+    device atomic_uint *nodeHeader [[buffer(4)]],
+    constant MTViewportABufferParameters &parameters [[buffer(5)]]
+) {
+    mt_viewport_store_abuffer(
+        input,
+        heads,
+        nodeHeader,
+        nodes,
+        parameters
+    );
+    return input.encodedID;
+}
+
+fragment MTViewportPickingFragmentOutput
+mt_viewport_picking_abuffer_normal_fragment(
+    MTViewportPickingOutput input [[stage_in]],
+    device atomic_uint *heads [[buffer(2)]],
+    device MTViewportABufferNode *nodes [[buffer(3)]],
+    device atomic_uint *nodeHeader [[buffer(4)]],
+    constant MTViewportABufferParameters &parameters [[buffer(5)]]
+) {
+    mt_viewport_store_abuffer(
+        input,
+        heads,
+        nodeHeader,
+        nodes,
+        parameters
+    );
     MTViewportPickingFragmentOutput output;
     output.encodedID = input.encodedID;
     float3 normal = normalize(input.normal);
@@ -1099,6 +1240,34 @@ public struct ViewportPickRequest {
     }
 }
 
+public struct ViewportPickHit {
+    public var objectID: UInt32
+    public var vertexID: UInt32
+    public var rawID: UInt32
+    public var depth: Float
+    public var normal: Vector3
+    public var hasDepth: Bool
+    public var hasNormal: Bool
+
+    public init(
+        objectID: UInt32,
+        vertexID: UInt32,
+        rawID: UInt32,
+        depth: Float = 0,
+        normal: Vector3 = Vector3(x: 0, y: 0, z: 1),
+        hasDepth: Bool = false,
+        hasNormal: Bool = false
+    ) {
+        self.objectID = objectID
+        self.vertexID = vertexID
+        self.rawID = rawID
+        self.depth = depth
+        self.normal = normal
+        self.hasDepth = hasDepth
+        self.hasNormal = hasNormal
+    }
+}
+
 public struct ViewportPickResult {
     public var mode: ViewportPickMode
     public var x: UInt32
@@ -1111,6 +1280,9 @@ public struct ViewportPickResult {
     public var normal: Vector3
     public var hasDepth: Bool
     public var hasNormal: Bool
+    private var hitStorage: [ViewportPickHit]
+    private var overflowedStorage: Bool
+    private var usedABufferStorage: Bool
 
     public init(
         mode: ViewportPickMode,
@@ -1136,6 +1308,54 @@ public struct ViewportPickResult {
         self.normal = normal
         self.hasDepth = hasDepth
         self.hasNormal = hasNormal
+        self.hitStorage = []
+        self.overflowedStorage = false
+        self.usedABufferStorage = false
+    }
+
+    public var hitCount: UInt32 {
+        if usedABufferStorage {
+            return UInt32(min(hitStorage.count, Int(UInt32.max)))
+        }
+        return hit ? 1 : 0
+    }
+
+    public var overflowed: Bool {
+        overflowedStorage
+    }
+
+    public var usedABuffer: Bool {
+        usedABufferStorage
+    }
+
+    public func hit(at index: UInt32) -> ViewportPickHit? {
+        if usedABufferStorage {
+            guard index < UInt32(hitStorage.count) else {
+                return nil
+            }
+            return hitStorage[Int(index)]
+        }
+        guard index == 0, hit else {
+            return nil
+        }
+        return ViewportPickHit(
+            objectID: objectID,
+            vertexID: vertexID,
+            rawID: rawID,
+            depth: depth,
+            normal: normal,
+            hasDepth: hasDepth,
+            hasNormal: hasNormal
+        )
+    }
+
+    fileprivate mutating func setABufferHits(
+        _ hits: [ViewportPickHit],
+        overflowed: Bool
+    ) {
+        hitStorage = hits
+        overflowedStorage = overflowed
+        usedABufferStorage = true
     }
 }
 
@@ -1143,19 +1363,22 @@ public struct ViewportPickFrameData {
     public var modelViewProjection: Matrix4x4
     public var objectID: UInt32
     public var mode: UInt32
+    public var pointSize: Float
     public var reserved0: UInt32
-    public var reserved1: UInt32
 
     public init(
         modelViewProjection: Matrix4x4,
         objectID: UInt32,
-        mode: ViewportPickMode
+        mode: ViewportPickMode,
+        pointSize: Float = 1
     ) {
         self.modelViewProjection = modelViewProjection
         self.objectID = objectID
         self.mode = UInt32(mode.rawValue)
+        self.pointSize = pointSize.isFinite && pointSize > 0
+            ? pointSize
+            : 1
         self.reserved0 = 0
-        self.reserved1 = 0
     }
 
     public func makeParameterBlock() -> ParameterBlock {
@@ -1178,6 +1401,10 @@ public struct ViewportPickFrameData {
     }
 }
 
+private let viewportABufferHeaderBytes: UInt64 = 16
+private let viewportABufferNodeStride: UInt64 = 32
+private let viewportABufferEmptyHead = UInt32.max
+
 public final class Viewport {
     private struct PendingPick {
         let commandBuffer: CommandBuffer
@@ -1187,6 +1414,16 @@ public final class Viewport {
         let depthTexture: Texture?
         let sourceNormalTexture: Texture?
         let normalTexture: Texture?
+        let request: ViewportPickRequest
+    }
+
+    private struct PendingABufferPick {
+        let commandBuffer: CommandBuffer
+        let headBuffer: Buffer
+        let nodeBuffer: Buffer
+        let width: UInt32
+        let height: UInt32
+        let nodeCapacity: UInt32
         let request: ViewportPickRequest
     }
 
@@ -1217,6 +1454,15 @@ public final class Viewport {
     private var pickingNormalTextureStorage: Texture?
     private var pickingNormalReadbackTextureStorage: Texture?
     private var pickingConfigurationStorage = ViewportPickingConfiguration()
+    private var pickingSelectionStorage = ViewportPickingSelection(
+        requestedPath: .baseline,
+        selectedPath: .baseline,
+        fallbackReason: .none,
+        fallbackAvailable: false
+    )
+    private var pickingABufferHeadStorage: Buffer?
+    private var pickingABufferNodeStorage: Buffer?
+    private var pickingABufferNodeCapacityStorage: UInt32 = 0
     private var accelerationSelectionStorage =
         ViewportAccelerationSelection(
             requestedPath: .baseline,
@@ -1226,7 +1472,9 @@ public final class Viewport {
         )
     private var pickingPipelineStorage: [Int32: RenderPipeline] = [:]
     private var pickingDepthStateStorage: DepthStencilState?
+    private var pickingABufferDepthStateStorage: DepthStencilState?
     private var pendingPickStorage: PendingPick?
+    private var pendingABufferPickStorage: PendingABufferPick?
     private var errorDescriptionStorage = ""
     private var pointerPositionStorage = Vector2(x: 0, y: 0)
     private var scrollDeltaStorage = Vector2(x: 0, y: 0)
@@ -1268,7 +1516,7 @@ public final class Viewport {
     }
 
     public var hasPendingPick: Bool {
-        pendingPickStorage != nil
+        pendingPickStorage != nil || pendingABufferPickStorage != nil
     }
 
     public var errorDescription: String {
@@ -1325,6 +1573,14 @@ public final class Viewport {
         pickingConfigurationStorage
     }
 
+    public var pickingSelection: ViewportPickingSelection {
+        pickingSelectionStorage
+    }
+
+    public var aBufferNodeCapacity: UInt32 {
+        pickingABufferNodeCapacityStorage
+    }
+
     public var accelerationSelection: ViewportAccelerationSelection {
         accelerationSelectionStorage
     }
@@ -1352,12 +1608,16 @@ public final class Viewport {
         accelerationSelectionStorage = selectPickingAcceleration(
             configuration
         )
+        pickingSelectionStorage = selectPickingPath(configuration)
         pickingTextureStorage = nil
         pickingReadbackTextureStorage = nil
         pickingDepthTextureStorage = nil
         pickingDepthReadbackTextureStorage = nil
         pickingNormalTextureStorage = nil
         pickingNormalReadbackTextureStorage = nil
+        pickingABufferHeadStorage = nil
+        pickingABufferNodeStorage = nil
+        pickingABufferNodeCapacityStorage = 0
         errorDescriptionStorage = ""
         return accelerationSelectionStorage
     }
@@ -1496,7 +1756,7 @@ public final class Viewport {
         guard let featureExtension = extensions[name] else {
             return false
         }
-        for rawValue in 0..<UInt32(DeviceFeature.simdGroupMatrix.rawValue + 1) {
+        for rawValue in 0..<UInt32(DeviceFeature.fragmentAtomics.rawValue + 1) {
             let mask = UInt32(1) << rawValue
             guard featureExtension.requiredFeatures & mask != 0 else {
                 continue
@@ -1753,9 +2013,14 @@ public final class Viewport {
               extentStorage.width > 0,
               extentStorage.height > 0,
               !commandBuffer.isCommitted,
-              !commandBuffer.hasActiveEncoder else {
+              !commandBuffer.hasActiveEncoder,
+              pendingPickStorage == nil,
+              pendingABufferPickStorage == nil else {
             errorDescriptionStorage =
                 "The viewport picking request is invalid or busy."
+            return false
+        }
+        guard ensurePickingTargets() else {
             return false
         }
         guard synchronizeSceneObjectIDs(scene) > 0 || scene.objectCount == 0
@@ -1790,21 +2055,71 @@ public final class Viewport {
                 }
             }
         }
-        guard let pipeline = preparePickingPipeline(
+        var usesABuffer =
+            pickingSelectionStorage.selectedPath == .aBuffer
+        var pipeline = preparePickingPipeline(
             colorFormat: descriptor.colorFormat,
-            hasNormalAttachment: descriptor.colorFormat(at: 1) != nil
-        ),
+            hasNormalAttachment: descriptor.colorFormat(at: 1) != nil,
+            usesABuffer: usesABuffer
+        )
+        if pipeline == nil, usesABuffer {
+            pickingSelectionStorage = ViewportPickingSelection(
+                requestedPath: pickingSelectionStorage.requestedPath,
+                selectedPath: .baseline,
+                fallbackReason: .resourcesUnavailable,
+                fallbackAvailable: true
+            )
+            usesABuffer = false
+            pipeline = preparePickingPipeline(
+                colorFormat: descriptor.colorFormat,
+                hasNormalAttachment: descriptor.colorFormat(at: 1) != nil,
+                usesABuffer: false
+            )
+        }
+        guard let pipeline,
         let encoder = commandBuffer.makeRenderEncoder(descriptor),
         encoder.setViewport(extentStorage) else {
             errorDescriptionStorage = commandBuffer.errorDescription
             return false
         }
         if descriptor.hasDepthAttachment {
-            guard let depthState = pickingDepthStateStorage,
+            let depthState = usesABuffer
+                ? pickingABufferDepthStateStorage
+                : pickingDepthStateStorage
+            guard let depthState,
                   encoder.setDepthStencilState(depthState) else {
                 _ = encoder.endEncoding()
                 errorDescriptionStorage =
                     "The viewport picking depth state could not be bound."
+                return false
+            }
+        }
+        if usesABuffer {
+            guard let headBuffer = pickingABufferHeadStorage,
+                  let nodeBuffer = pickingABufferNodeStorage,
+                  resetABufferStorage(),
+                  let parameters = makeABufferParameters(),
+                  commandBuffer.retainResource(headBuffer),
+                  commandBuffer.retainResource(nodeBuffer),
+                  encoder.setFragmentBuffer(
+                      headBuffer,
+                      offset: viewportABufferHeaderBytes,
+                      index: 2
+                  ),
+                  encoder.setFragmentBuffer(
+                      nodeBuffer,
+                      offset: viewportABufferHeaderBytes,
+                      index: 3
+                  ),
+                  encoder.setFragmentBuffer(
+                      nodeBuffer,
+                      offset: 0,
+                      index: 4
+                  ),
+                  encoder.setFragmentBytes(parameters, index: 5) else {
+                _ = encoder.endEncoding()
+                errorDescriptionStorage =
+                    "The viewport A-buffer bindings could not be encoded."
                 return false
             }
         }
@@ -1846,7 +2161,8 @@ public final class Viewport {
                     viewportTransformMatrix(object.transform)
                 ),
                 objectID: objectID,
-                mode: mode
+                mode: mode,
+                pointSize: pickingConfigurationStorage.vertexPointSize
             ).makeParameterBlock()
             guard encoder.setRenderPipeline(pipeline),
                   encoder.setVertexBuffer(
@@ -2143,14 +2459,51 @@ public final class Viewport {
     ) -> Bool {
         guard isActive,
               pendingPickStorage == nil,
+              pendingABufferPickStorage == nil,
               !commandBuffer.isCommitted,
               !commandBuffer.hasActiveEncoder,
               request.x < extentStorage.width,
-              request.y < extentStorage.height,
-              let texture = pickingTextureStorage,
-              let readbackTexture = pickingReadbackTextureStorage else {
+              request.y < extentStorage.height else {
             errorDescriptionStorage =
                 "The viewport pick readback request is invalid or busy."
+            return false
+        }
+        guard ensurePickingTargets() else {
+            return false
+        }
+        if request.mode == .vertex {
+            guard request.objectID != 0,
+                  objectNames[request.objectID] != nil else {
+                errorDescriptionStorage =
+                    "Vertex picking requires a registered object ID."
+                return false
+            }
+        }
+        if pickingSelectionStorage.selectedPath == .aBuffer {
+            guard let headBuffer = pickingABufferHeadStorage,
+                  let nodeBuffer = pickingABufferNodeStorage,
+                  commandBuffer.retainResource(headBuffer),
+                  commandBuffer.retainResource(nodeBuffer) else {
+                errorDescriptionStorage =
+                    "The viewport A-buffer readback is unavailable."
+                return false
+            }
+            pendingABufferPickStorage = PendingABufferPick(
+                commandBuffer: commandBuffer,
+                headBuffer: headBuffer,
+                nodeBuffer: nodeBuffer,
+                width: extentStorage.width,
+                height: extentStorage.height,
+                nodeCapacity: pickingABufferNodeCapacityStorage,
+                request: request
+            )
+            errorDescriptionStorage = ""
+            return true
+        }
+        guard let texture = pickingTextureStorage,
+              let readbackTexture = pickingReadbackTextureStorage else {
+            errorDescriptionStorage =
+                "The viewport pick readback targets are unavailable."
             return false
         }
         guard !request.includeDepth
@@ -2164,14 +2517,6 @@ public final class Viewport {
             errorDescriptionStorage =
                 "The requested picking attachment was not configured."
             return false
-        }
-        if request.mode == .vertex {
-            guard request.objectID != 0,
-                  objectNames[request.objectID] != nil else {
-                errorDescriptionStorage =
-                    "Vertex picking requires a registered object ID."
-                return false
-            }
         }
         guard let blit = commandBuffer.makeBlitEncoder() else {
             errorDescriptionStorage = commandBuffer.errorDescription
@@ -2238,6 +2583,21 @@ public final class Viewport {
     }
 
     public func pollPickResult() -> ViewportPickResult? {
+        if let pending = pendingABufferPickStorage {
+            switch pending.commandBuffer.status {
+            case .error:
+                errorDescriptionStorage = pending.commandBuffer.errorDescription
+                pendingABufferPickStorage = nil
+                return nil
+            case .completed:
+                break
+            default:
+                return nil
+            }
+            let result = readABufferPickResult(pending)
+            pendingABufferPickStorage = nil
+            return result
+        }
         guard let pending = pendingPickStorage else {
             return nil
         }
@@ -2265,6 +2625,7 @@ public final class Viewport {
         sceneObjectIDHistory.removeAll()
         rendererStorage = nil
         pendingPickStorage = nil
+        pendingABufferPickStorage = nil
         stateStorage = .shutDown
     }
 
@@ -2297,7 +2658,10 @@ public final class Viewport {
                     == extentStorage.width
                     && pickingNormalReadbackTextureStorage?.height
                     == extentStorage.height)) {
-            return true
+            if pickingSelectionStorage.selectedPath != .aBuffer
+                || hasABufferStorageForCurrentExtent() {
+                return true
+            }
         }
 
         let colorDescriptor = TextureDescriptor(
@@ -2427,7 +2791,234 @@ public final class Viewport {
         pickingDepthReadbackTextureStorage = depthReadback
         pickingNormalTextureStorage = normal
         pickingNormalReadbackTextureStorage = normalReadback
+        if pickingSelectionStorage.selectedPath == .aBuffer,
+           !ensureABufferStorage() {
+            pickingSelectionStorage = ViewportPickingSelection(
+                requestedPath: pickingSelectionStorage.requestedPath,
+                selectedPath: .baseline,
+                fallbackReason: .resourcesUnavailable,
+                fallbackAvailable: true
+            )
+            pickingABufferHeadStorage = nil
+            pickingABufferNodeStorage = nil
+            pickingABufferNodeCapacityStorage = 0
+        }
         return true
+    }
+
+    private func requestedABufferCapacity() -> UInt32? {
+        let nodesPerPixel = UInt64(
+            pickingConfigurationStorage.aBufferNodesPerPixel
+        )
+        let maxNodes = UInt64(
+            pickingConfigurationStorage.aBufferMaxNodes
+        )
+        guard nodesPerPixel > 0, maxNodes > 0 else {
+            return nil
+        }
+        let pixelCount = UInt64(extentStorage.width)
+            * UInt64(extentStorage.height)
+        guard pixelCount > 0,
+              pixelCount <= UInt64.max / nodesPerPixel else {
+            return nil
+        }
+        let capacity = pixelCount * nodesPerPixel
+        guard capacity <= maxNodes,
+              capacity <= UInt64(UInt32.max) else {
+            return nil
+        }
+        return UInt32(capacity)
+    }
+
+    private func hasABufferStorageForCurrentExtent() -> Bool {
+        guard let capacity = requestedABufferCapacity(),
+              let headBuffer = pickingABufferHeadStorage,
+              let nodeBuffer = pickingABufferNodeStorage else {
+            return false
+        }
+        let pixelCount = UInt64(extentStorage.width)
+            * UInt64(extentStorage.height)
+        guard pixelCount <= (UInt64.max - viewportABufferHeaderBytes) / 4,
+              capacity <= UInt32.max else {
+            return false
+        }
+        let headBytes = viewportABufferHeaderBytes + pixelCount * 4
+        guard capacity <= UInt32.max / UInt32(viewportABufferNodeStride)
+        else {
+            return false
+        }
+        let nodeBytes = viewportABufferHeaderBytes
+            + UInt64(capacity) * viewportABufferNodeStride
+        return pickingABufferNodeCapacityStorage == capacity
+            && headBuffer.length == headBytes
+            && nodeBuffer.length == nodeBytes
+    }
+
+    private func ensureABufferStorage() -> Bool {
+        guard let capacity = requestedABufferCapacity() else {
+            errorDescriptionStorage =
+                "The viewport A-buffer capacity is invalid or exceeds its "
+                + "configured limit."
+            return false
+        }
+        let pixelCount = UInt64(extentStorage.width)
+            * UInt64(extentStorage.height)
+        guard pixelCount <= (UInt64.max - viewportABufferHeaderBytes) / 4,
+              UInt64(capacity)
+                    <= (UInt64.max - viewportABufferHeaderBytes)
+                        / viewportABufferNodeStride else {
+            errorDescriptionStorage =
+                "The viewport A-buffer extent is too large."
+            return false
+        }
+        let headBytes = viewportABufferHeaderBytes + pixelCount * 4
+        let nodeBytes = viewportABufferHeaderBytes
+            + UInt64(capacity) * viewportABufferNodeStride
+        guard headBytes <= UInt64(Int.max),
+              nodeBytes <= UInt64(Int.max),
+              headBytes <= device.capabilities.maxBufferLength,
+              nodeBytes <= device.capabilities.maxBufferLength else {
+            errorDescriptionStorage =
+                "The viewport A-buffer exceeds the device buffer limit."
+            return false
+        }
+        if hasABufferStorageForCurrentExtent() {
+            return resetABufferStorage()
+        }
+
+        let usage = UInt32(
+            BufferUsage.storage.rawValue | BufferUsage.readback.rawValue
+        )
+        let descriptor = BufferDescriptor(
+            length: headBytes,
+            usage: usage,
+            storageMode: .shared,
+            cpuCacheMode: .defaultCache,
+            hazardMode: .defaultMode,
+            label: "mt viewport A-buffer heads"
+        )
+        let nodeDescriptor = BufferDescriptor(
+            length: nodeBytes,
+            usage: usage,
+            storageMode: .shared,
+            cpuCacheMode: .defaultCache,
+            hazardMode: .defaultMode,
+            label: "mt viewport A-buffer nodes"
+        )
+        guard let headBuffer = device.createBuffer(descriptor),
+              let nodeBuffer = device.createBuffer(nodeDescriptor) else {
+            errorDescriptionStorage =
+                "Metal could not allocate the viewport A-buffer."
+            return false
+        }
+        pickingABufferHeadStorage = headBuffer
+        pickingABufferNodeStorage = nodeBuffer
+        pickingABufferNodeCapacityStorage = capacity
+        return resetABufferStorage()
+    }
+
+    private func resetABufferStorage() -> Bool {
+        guard let headBuffer = pickingABufferHeadStorage,
+              let nodeBuffer = pickingABufferNodeStorage,
+              let capacity = requestedABufferCapacity() else {
+            return false
+        }
+        let pixelCount = UInt64(extentStorage.width)
+            * UInt64(extentStorage.height)
+        guard pixelCount <= UInt64(Int.max) - 4,
+              UInt64(capacity) <= UInt64(Int.max) / 8 else {
+            return false
+        }
+        var headWords = [UInt32](
+            repeating: viewportABufferEmptyHead,
+            count: Int(pixelCount) + 4
+        )
+        headWords[0] = extentStorage.width
+        headWords[1] = extentStorage.height
+        headWords[2] = 0
+        headWords[3] = 0
+        let didResetHeads = headWords.withUnsafeBytes { rawBytes in
+            guard let baseAddress = rawBytes.baseAddress else {
+                return false
+            }
+            return headBuffer.upload(
+                source: baseAddress,
+                length: UInt64(rawBytes.count),
+                offset: 0
+            )
+        }
+        guard didResetHeads else {
+            return false
+        }
+        var nodeHeader = [UInt32](
+            repeating: 0,
+            count: 4
+        )
+        nodeHeader[2] = capacity
+        return nodeHeader.withUnsafeBytes { rawBytes in
+            guard let baseAddress = rawBytes.baseAddress else {
+                return false
+            }
+            return nodeBuffer.upload(
+                source: baseAddress,
+                length: UInt64(rawBytes.count),
+                offset: 0
+            )
+        }
+    }
+
+    private func makeABufferParameters() -> ParameterBlock? {
+        let parameters = ParameterBlock(length: 16, alignment: 16)
+        guard parameters.setUInt32(0, value: extentStorage.width),
+              parameters.setUInt32(4, value: extentStorage.height),
+              parameters.setUInt32(
+                  8,
+                  value: pickingABufferNodeCapacityStorage
+              ),
+              parameters.setUInt32(12, value: 0) else {
+            return nil
+        }
+        return parameters
+    }
+
+    private func selectPickingPath(
+        _ configuration: ViewportPickingConfiguration
+    ) -> ViewportPickingSelection {
+        guard configuration.preferABuffer else {
+            return ViewportPickingSelection(
+                requestedPath: .baseline,
+                selectedPath: .baseline,
+                fallbackReason: .none,
+                fallbackAvailable: false
+            )
+        }
+        guard configuration.aBufferNodesPerPixel > 0,
+              configuration.aBufferMaxNodes > 0,
+              configuration.vertexPointSize.isFinite,
+              configuration.vertexPointSize > 0 else {
+            return ViewportPickingSelection(
+                requestedPath: .aBuffer,
+                selectedPath: .baseline,
+                fallbackReason: .invalidRequest,
+                fallbackAvailable: true
+            )
+        }
+        guard device.capabilities.availability(
+            for: .fragmentAtomics
+        ).isUsable else {
+            return ViewportPickingSelection(
+                requestedPath: .aBuffer,
+                selectedPath: .baseline,
+                fallbackReason: .capabilityUnavailable,
+                fallbackAvailable: true
+            )
+        }
+        return ViewportPickingSelection(
+            requestedPath: .aBuffer,
+            selectedPath: .aBuffer,
+            fallbackReason: .none,
+            fallbackAvailable: true
+        )
     }
 
     private func selectPickingAcceleration(
@@ -2502,7 +3093,8 @@ public final class Viewport {
 
     private func preparePickingPipeline(
         colorFormat: PixelFormat,
-        hasNormalAttachment: Bool
+        hasNormalAttachment: Bool,
+        usesABuffer: Bool
     ) -> RenderPipeline? {
         guard colorFormat != .invalid else {
             errorDescriptionStorage =
@@ -2511,12 +3103,20 @@ public final class Viewport {
         }
         let cacheKey = colorFormat.rawValue
             + (hasNormalAttachment ? 1000 : 0)
+            + (usesABuffer ? 2000 : 0)
         if let pipeline = pickingPipelineStorage[cacheKey] {
             return pipeline
         }
-        let fragmentName = hasNormalAttachment
-            ? "mt_viewport_picking_normal_fragment"
-            : "mt_viewport_picking_fragment"
+        let fragmentName: String
+        if usesABuffer {
+            fragmentName = hasNormalAttachment
+                ? "mt_viewport_picking_abuffer_normal_fragment"
+                : "mt_viewport_picking_abuffer_fragment"
+        } else {
+            fragmentName = hasNormalAttachment
+                ? "mt_viewport_picking_normal_fragment"
+                : "mt_viewport_picking_fragment"
+        }
         guard let library = device.createShaderLibraryFromSource(
             source: viewportPickingShaderSource,
             label: "mt viewport picking"
@@ -2575,9 +3175,207 @@ public final class Viewport {
                 )
             )
         }
+        if usesABuffer, pickingABufferDepthStateStorage == nil {
+            pickingABufferDepthStateStorage = device.createDepthStencilState(
+                DepthStencilDescriptor(
+                    depthCompareFunction: .always,
+                    depthWriteEnabled: false,
+                    frontFaceStencil: .default,
+                    backFaceStencil: .default,
+                    label: "mt.viewport.picking.abuffer.depth"
+                )
+            )
+        }
+        guard !usesABuffer || pickingABufferDepthStateStorage != nil else {
+            errorDescriptionStorage =
+                "The viewport A-buffer depth state could not be created."
+            return nil
+        }
         pickingPipelineStorage[cacheKey] = pipeline
         errorDescriptionStorage = ""
         return pipeline
+    }
+
+    private func readABufferPickResult(
+        _ pending: PendingABufferPick
+    ) -> ViewportPickResult? {
+        let pixelCount = UInt64(pending.width)
+            * UInt64(pending.height)
+        guard pixelCount <= (UInt64.max - viewportABufferHeaderBytes) / 4,
+              UInt64(pending.nodeCapacity)
+                    <= (UInt64.max - viewportABufferHeaderBytes)
+                        / viewportABufferNodeStride else {
+            errorDescriptionStorage = "The viewport A-buffer extent is invalid."
+            return nil
+        }
+        let headByteCount = viewportABufferHeaderBytes + pixelCount * 4
+        let nodeByteCount = viewportABufferHeaderBytes
+            + UInt64(pending.nodeCapacity) * viewportABufferNodeStride
+        guard headByteCount <= UInt64(Int.max),
+              nodeByteCount <= UInt64(Int.max) else {
+            errorDescriptionStorage =
+                "The viewport A-buffer readback is too large."
+            return nil
+        }
+
+        var headBytes = [UInt8](repeating: 0, count: Int(headByteCount))
+        let didReadHeads = headBytes.withUnsafeMutableBytes { rawBytes in
+            guard let baseAddress = rawBytes.baseAddress else {
+                return false
+            }
+            return pending.headBuffer.read(
+                destination: baseAddress,
+                length: headByteCount,
+                offset: 0
+            )
+        }
+        guard didReadHeads else {
+            errorDescriptionStorage =
+                "The viewport A-buffer head readback failed."
+            return nil
+        }
+
+        var nodeBytes = [UInt8](repeating: 0, count: Int(nodeByteCount))
+        let didReadNodes = nodeBytes.withUnsafeMutableBytes { rawBytes in
+            guard let baseAddress = rawBytes.baseAddress else {
+                return false
+            }
+            return pending.nodeBuffer.read(
+                destination: baseAddress,
+                length: nodeByteCount,
+                offset: 0
+            )
+        }
+        guard didReadNodes else {
+            errorDescriptionStorage =
+                "The viewport A-buffer node readback failed."
+            return nil
+        }
+
+        func readUInt32(_ bytes: [UInt8], _ offset: Int) -> UInt32 {
+            UInt32(bytes[offset])
+                | (UInt32(bytes[offset + 1]) << 8)
+                | (UInt32(bytes[offset + 2]) << 16)
+                | (UInt32(bytes[offset + 3]) << 24)
+        }
+
+        func readFloat(_ bytes: [UInt8], _ offset: Int) -> Float {
+            Float(bitPattern: readUInt32(bytes, offset))
+        }
+
+        let headerWidth = readUInt32(headBytes, 0)
+        let headerHeight = readUInt32(headBytes, 4)
+        guard headerWidth == pending.width,
+              headerHeight == pending.height else {
+            errorDescriptionStorage =
+                "The viewport A-buffer dimensions changed before readback."
+            return nil
+        }
+        var overflowed = readUInt32(nodeBytes, 4) != 0
+        let capacity = min(
+            readUInt32(nodeBytes, 8),
+            pending.nodeCapacity
+        )
+        let pixelIndex = UInt64(pending.request.y)
+            * UInt64(headerWidth)
+            + UInt64(pending.request.x)
+        let headOffset = Int(viewportABufferHeaderBytes + pixelIndex * 4)
+        var nodeIndex = readUInt32(headBytes, headOffset)
+        var traversed: UInt32 = 0
+        var hits: [ViewportPickHit] = []
+
+        while nodeIndex != viewportABufferEmptyHead,
+              traversed < capacity {
+            guard nodeIndex < capacity else {
+                errorDescriptionStorage =
+                    "The viewport A-buffer contained an invalid node link."
+                return nil
+            }
+            let nodeOffset = Int(viewportABufferHeaderBytes)
+                + Int(nodeIndex) * Int(viewportABufferNodeStride)
+            guard nodeOffset >= 0,
+                  nodeOffset <= nodeBytes.count - Int(viewportABufferNodeStride)
+            else {
+                errorDescriptionStorage =
+                    "The viewport A-buffer node offset is invalid."
+                return nil
+            }
+            let objectID = readUInt32(nodeBytes, nodeOffset)
+            let vertexID = readUInt32(nodeBytes, nodeOffset + 4)
+            let depth = readFloat(nodeBytes, nodeOffset + 8)
+            let next = readUInt32(nodeBytes, nodeOffset + 12)
+            let normal = Vector3(
+                x: readFloat(nodeBytes, nodeOffset + 16),
+                y: readFloat(nodeBytes, nodeOffset + 20),
+                z: readFloat(nodeBytes, nodeOffset + 24)
+            )
+            let hasNormal = normal.x.isFinite
+                && normal.y.isFinite
+                && normal.z.isFinite
+            if pending.request.mode == .object
+                || objectID == pending.request.objectID {
+                let rawID = pending.request.mode == .object
+                    ? objectID
+                    : PickingID.vertex(vertexID)?.rawValue ?? 0
+                hits.append(
+                    ViewportPickHit(
+                        objectID: objectID,
+                        vertexID: pending.request.mode == .object
+                            ? 0
+                            : vertexID,
+                        rawID: rawID,
+                        depth: depth,
+                        normal: normal,
+                        hasDepth: depth.isFinite,
+                        hasNormal: hasNormal
+                    )
+                )
+            }
+            nodeIndex = next
+            traversed += 1
+        }
+        if nodeIndex != viewportABufferEmptyHead {
+            overflowed = true
+        }
+        hits.sort { lhs, rhs in
+            let lhsDepth = lhs.depth.isFinite
+                ? lhs.depth
+                : Float.greatestFiniteMagnitude
+            let rhsDepth = rhs.depth.isFinite
+                ? rhs.depth
+                : Float.greatestFiniteMagnitude
+            if lhsDepth != rhsDepth {
+                return lhsDepth < rhsDepth
+            }
+            if lhs.objectID != rhs.objectID {
+                return lhs.objectID < rhs.objectID
+            }
+            return lhs.vertexID < rhs.vertexID
+        }
+
+        let first = hits.first
+        let objectID: UInt32
+        if pending.request.mode == .vertex {
+            objectID = pending.request.objectID
+        } else {
+            objectID = first?.objectID ?? 0
+        }
+        var result = ViewportPickResult(
+            mode: pending.request.mode,
+            x: pending.request.x,
+            y: pending.request.y,
+            objectID: objectID,
+            vertexID: first?.vertexID ?? 0,
+            rawID: first?.rawID ?? 0,
+            hit: !hits.isEmpty,
+            depth: first?.depth ?? 0,
+            normal: first?.normal ?? Vector3(x: 0, y: 0, z: 1),
+            hasDepth: first?.hasDepth ?? false,
+            hasNormal: first?.hasNormal ?? false
+        )
+        result.setABufferHits(hits, overflowed: overflowed)
+        errorDescriptionStorage = ""
+        return result
     }
 
     private func readPickResult(

@@ -232,6 +232,9 @@ using ViewportAccelerationPath = MTCore::ViewportAccelerationPath;
 using ViewportAccelerationFallbackReason =
     MTCore::ViewportAccelerationFallbackReason;
 using ViewportAccelerationSelection = MTCore::ViewportAccelerationSelection;
+using ViewportPickingPath = MTCore::ViewportPickingPath;
+using ViewportPickingFallbackReason = MTCore::ViewportPickingFallbackReason;
+using ViewportPickingSelection = MTCore::ViewportPickingSelection;
 using ViewportPickingConfiguration = MTCore::ViewportPickingConfiguration;
 using ViewportFeatureVertex = MTCore::ViewportFeatureVertex;
 using ViewportFeatureFrameData = MTCore::ViewportFeatureFrameData;
@@ -245,6 +248,7 @@ using ViewportUpdate = MTCore::ViewportUpdate;
 using ViewportFeature = MTCore::ViewportFeature;
 using PickingID = MTCore::PickingID;
 using ViewportPickRequest = MTCore::ViewportPickRequest;
+using ViewportPickHit = MTCore::ViewportPickHit;
 using ViewportPickResult = MTCore::ViewportPickResult;
 using ViewportPickFrameData = MTCore::ViewportPickFrameData;
 using Viewport = MTCore::Viewport;

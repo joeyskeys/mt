@@ -106,10 +106,15 @@ For every run, record:
 - Native extensions: optional depth32-float and RGBA32-float normal
   attachments, deterministic scene/vertex IDs, and memoryless/tile/mesh
   capability selection with explicit baseline fallback.
+- Overlap path: fragment-atomic linked-list A-buffer with configurable
+  nodes-per-pixel, completion-gated CPU traversal, and explicit overflow
+  reporting.
 - Tile/mesh picking must remain reported as `resourcesUnavailable` until a
   native picking pipeline has the required tile/mesh resources; it must not
   be reported as selected while recording the baseline raster path.
 - Selected acceleration path/fallback reason:
+- Selected picking path/fallback reason:
+- A-buffer hit count/overflow result:
 - Depth/normal readback result:
 - Resize/in-flight result:
 - Tests/examples:

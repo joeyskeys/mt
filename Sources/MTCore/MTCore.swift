@@ -41,6 +41,7 @@ public enum DeviceFeature: Int32 {
     case counterSampling
     case simdGroups
     case simdGroupMatrix
+    case fragmentAtomics
 }
 
 public enum MetalCapabilityState: Int32 {
@@ -1904,6 +1905,7 @@ public struct DeviceCapabilities {
     public var counterSampling: Bool
     public var simdGroups: Bool
     public var simdGroupMatrix: Bool
+    public var fragmentAtomics: Bool
     public var maxThreadsPerThreadgroup: UInt32
     public var maxBufferLength: UInt64
     public var maxArgumentBufferSamplerCount: UInt32
@@ -1934,6 +1936,7 @@ public struct DeviceCapabilities {
         maxTextureDimension2DLimit: MetalCapabilityLimit = .unknown,
         simdGroups: Bool = false,
         simdGroupMatrix: Bool = false,
+        fragmentAtomics: Bool = false,
         rayTracingMotion: Bool = false,
         operatingSystemMajor: UInt32 = 0,
         operatingSystemMinor: UInt32 = 0,
@@ -1953,6 +1956,7 @@ public struct DeviceCapabilities {
         self.counterSampling = counterSampling
         self.simdGroups = simdGroups
         self.simdGroupMatrix = simdGroupMatrix
+        self.fragmentAtomics = fragmentAtomics
         self.maxThreadsPerThreadgroup = maxThreadsPerThreadgroup
         self.maxBufferLength = maxBufferLength
         self.maxArgumentBufferSamplerCount = maxArgumentBufferSamplerCount
@@ -2075,6 +2079,8 @@ public struct DeviceCapabilities {
             supported = simdGroups
         case .simdGroupMatrix:
             supported = simdGroupMatrix
+        case .fragmentAtomics:
+            supported = fragmentAtomics
         }
 
         let state: MetalCapabilityState
@@ -2118,7 +2124,8 @@ public struct DeviceCapabilities {
             )
         case .argumentBufferTier2, .indirectCommandBuffers,
              .memorylessAttachments, .rayTracing, .dynamicLibraries,
-             .counterSampling, .simdGroups, .simdGroupMatrix:
+             .counterSampling, .simdGroups, .simdGroupMatrix,
+             .fragmentAtomics:
             return .unknown
         }
     }
@@ -2147,6 +2154,8 @@ public struct DeviceCapabilities {
             return simdGroups
         case .simdGroupMatrix:
             return simdGroupMatrix
+        case .fragmentAtomics:
+            return fragmentAtomics
         }
     }
 }
@@ -10896,6 +10905,8 @@ public final class Device {
             simdGroups: hasMacFamily || hasAppleFamily,
             simdGroupMatrix: device.supportsFamily(.apple7)
                 || device.supportsFamily(.mac2),
+            fragmentAtomics: device.supportsFamily(.mac2)
+                || device.supportsFamily(.apple3),
             rayTracingMotion: device.supportsRaytracing
                 && (
                     device.supportsFamily(.apple6)
