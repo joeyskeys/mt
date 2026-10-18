@@ -15,6 +15,9 @@ tests/
     scene/         # Plan 08
     viewport/      # Plan 09
     host/          # Plan 10; optional adapter API-shape tests
+    asset_pipeline/ # Plan 21; optional content boundary API-shape tests
+    external_resources/ # Plan 22; optional IOSurface API-shape tests
+    python/        # Plan 22; optional Python-package API-shape tests
   compile/         # Public-header and API compile-only checks
   consumer/        # External-consumer/package-shape checks
     installed/     # Standalone find_package(mt) consumer project
@@ -73,4 +76,44 @@ remain device-gated for the Metal-capable verification machine.
 Plan 15 tests cover pass scheduling, transparent ordering, deterministic
 Forward+ cluster bounds and overflow, CPU culling/LOD selection, persistent
 statistics, native-path selection records, and meshlet staging constraints.
+Plan 16 tests cover indexed/meshlet representation retention, procedural
+geometry and curve tessellation, versioned scene synchronization contracts,
+material parameter/table metadata, clustered-light and shadow descriptors, and
+built-in shader data-layout metadata. Device upload and completion-retirement
+cases remain guarded for the Metal-capable verification machine. Plan 17
+tests cover built-in viewport GPU feature contracts, automatic scene ID
+synchronization, deterministic vertex-distance selection, optional depth and
+normal attachment contracts, capability fallback reporting, value-only
+extension registration, and the editor-style offscreen fixture. GPU drawing,
+private-to-shared attachment copies, shader compilation, and runtime
+verification remain guarded for the Metal-capable verification machine. Plan
+18 adds deterministic offscreen clear/readback, compute-to-buffer, blit/mipmap,
+MSAA/depth descriptor, viewport-picking, installed-consumer, example-matrix,
+and Debug/Release package-validation coverage. Results use the JSON schema
+under `docs/verification/`; unsupported capabilities remain distinct from
+checks that were not run.
+Plan 19 adds SwiftPM configuration and input-translation tests for the
+AppKit and MTKView adapters, C++ generated-header shape checks for the
+optional host targets, and opt-in native window consumers. Window, drawable,
+Retina-scale, and presentation checks remain runtime-gated on a
+Metal-capable macOS host; GLFW and Qt have no targets until a concrete
+consumer contract is supplied.
+Plan 20 adds optional ImGui coordinator/version/input/frame-phase tests,
+CoreText glyph/atlas/layout/mesh tests, and a separate value-only FreeType
+bridge suite. C++ API-shape tests are registered under
+`tests/unit/gui_text` only when the corresponding optional targets are
+enabled. These targets are not included by the core `mt/mt.hpp` surface.
+Plan 21 adds normalized asset-value conversion tests for coordinate systems,
+winding, materials, textures, mip policies, P5/P6 loading, diagnostics,
+versioned serialization/migration, and conversion into Plan 16 scene values.
+The C++ API-shape and installed-consumer checks are opt-in under
+`tests/unit/asset_pipeline` and the asset-pipeline installed consumer. The
+target remains dependency-free unless an application supplies its own
+importer or codec.
+Plan 22 adds descriptor and shared-event policy tests for the optional
+IOSurface boundary, a C++ generated-header check, and an opt-in Python import
+smoke test. The Python extension is disabled by default and its test uses the
+explicitly selected `MT_PYTHON_EXECUTABLE`; neither Python nor IOSurface is
+required by the core test suite. Imported-resource GPU and producer-lifetime
+checks remain guarded for a Metal-capable verification machine.
 

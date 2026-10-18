@@ -96,11 +96,37 @@ not make it an external integration.
 
 Plan 18 is verification and release evidence. It proves the wrapper and its
 packaging on Metal-capable machines but does not implement renderer or host
-features.
+features. Its repository-side result schema, offscreen validation fixtures,
+installed-consumer flow, example matrix, and Debug/Release/SwiftPM validation
+automation are now present; device-specific evidence remains pending until a
+Metal-capable verification run.
 
 Plans 19–22 are optional integrations. They add host frameworks, GUI/text
 libraries, content pipelines, scripting, or external-resource producers and
 must remain independently enabled and tested.
+
+Plan 19 now contains the Swift AppKit/CAMetalLayer and MTKView adapters,
+borrowed-handle native window consumers, AppKit input translation, optional
+host examples, and isolated host API tests. GLFW and Qt remain intentionally
+demand-driven until a concrete native-layer ownership contract exists.
+
+Plan 20 now contains isolated ImGui coordination, CoreText glyph/atlas/text
+data, and a separate value-only FreeType bridge. These targets are opt-in and
+do not alter the core `mt::mt` dependency graph.
+
+Plan 21 now contains an isolated normalized asset-value boundary, deterministic
+coordinate/material/texture conversion, a small P5/P6 fixture loader, and
+versioned JSON serialization. It does not bundle Assimp, image codecs, or
+other importer dependencies, and does not alter the core `mt::mt` dependency
+graph.
+
+Plan 22 is the final optional integration boundary. It contains the
+dependency-isolated CPython facade and IOSurface imported-resource adapter.
+Python is disabled by default and requires an explicitly selected interpreter
+when its validation path is enabled; Conda and arbitrary user-selected
+installations are supported through CMake cache variables. External textures
+and buffers carry producer ownership, format/usage validation, and explicit
+shared-event policies. Neither integration is included by `mt/mt.hpp`.
 
 ## Status convention
 

@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "examples": [
+    {
+      "name": "device_info",
+      "required_features": [],
+      "fallback": "report no Metal device"
+    },
+    {
+      "name": "offscreen_triangle",
+      "required_features": ["render_targets", "shared_readback"],
+      "fallback": "skip when no device"
+    },
+    {
+      "name": "window_triangle",
+      "required_features": ["AppKit", "CAMetalLayer"],
+      "fallback": "use the offscreen example"
+    },
+    {
+      "name": "indexed_mesh",
+      "required_features": ["vertex_buffers", "index_buffers", "depth"],
+      "fallback": "use direct vertex drawing"
+    },
+    {
+      "name": "compute_image",
+      "required_features": ["compute", "blit", "shared_readback"],
+      "fallback": "skip compute-specific evidence"
+    },
+    {
+      "name": "mesh_triangle",
+      "required_features": ["mesh_shaders"],
+      "fallback": "use indexed submission"
+    },
+    {
+      "name": "argument_buffer_materials",
+      "required_features": ["argument_buffers"],
+      "fallback": "use direct resource slots"
+    },
+    {
+      "name": "gpu_culling",
+      "required_features": ["indirect_command_buffers"],
+      "fallback": "use CPU culling"
+    },
+    {
+      "name": "tile_pass",
+      "required_features": ["tile_shaders", "memoryless_attachments"],
+      "fallback": "use a stored render pass"
+    },
+    {
+      "name": "forward_plus",
+      "required_features": ["compute", "renderer"],
+      "fallback": "use Forward rendering"
+    },
+    {
+      "name": "viewport_picking",
+      "required_features": ["viewport", "rgba8_readback"],
+      "fallback": "use the RGBA8 baseline path"
+    },
+    {
+      "name": "external_iosurface",
+      "required_features": ["IOSurface", "external_resource_target"],
+      "fallback": "use wrapper-owned textures and buffers"
+    },
+    {
+      "name": "python_import",
+      "required_features": ["selected_python", "python_target"],
+      "fallback": "use the installed C++ facade"
+    }
+  ]
+}

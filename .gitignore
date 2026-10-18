@@ -41,6 +41,7 @@ MTCore-Swift.h
 # CMake build trees
 /build/
 /cmake-build-*/
+.validation-build/
 
 # CocoaPods
 #

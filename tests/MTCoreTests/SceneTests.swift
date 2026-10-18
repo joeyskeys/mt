@@ -267,6 +267,62 @@ final class SceneTests: XCTestCase {
         XCTAssertTrue(materials.addMaterial(material))
         XCTAssertFalse(materials.addMaterial(material))
         XCTAssertEqual(materials.materialAt(0)?.name, "default")
+        material.requiresArgumentBuffers = true
+        XCTAssertEqual(material.bindingPath, .directSlots)
+        XCTAssertTrue(material.usedBindingFallback)
+        material.setPipelineMetadata(
+            MaterialPipelineMetadata(
+                shaderSignature: "scene",
+                layoutSignature: "scene.layout",
+                descriptorSignature: "scene.descriptor",
+                cacheIdentifier: "scene.cache"
+            )
+        )
+        XCTAssertEqual(material.pipelineMetadata?.cacheIdentifier, "scene.cache")
+        material.setFragmentParameters(
+            PhongMaterialData(
+                baseColor: Vector4(x: 1, y: 1, z: 1, w: 1),
+                specularColor: Vector4(x: 1, y: 1, z: 1, w: 1),
+                shininess: 16
+            ).makeParameterBlock(),
+            index: 2
+        )
+        let textureDescriptor = TextureDescriptor(
+            textureType: .twoD,
+            pixelFormat: .rgba8Unorm,
+            width: 1,
+            height: 1,
+            depth: 1,
+            arrayLength: 1,
+            mipLevelCount: 1,
+            sampleCount: 1,
+            usage: UInt32(TextureUsage.shaderRead.rawValue),
+            storageMode: .gpuPrivate,
+            cpuCacheMode: .defaultCache,
+            hazardMode: .defaultMode,
+            label: "mt material texture"
+        )
+        if let texture = device.createTexture(textureDescriptor) {
+            material.setFragmentTexture(texture, index: 0)
+            XCTAssertEqual(material.fragmentTextures.count, 1)
+        }
+        let samplerDescriptor = SamplerDescriptor(
+            minFilter: .linear,
+            magFilter: .linear,
+            mipFilter: .notMipmapped,
+            addressModeS: .clampToEdge,
+            addressModeT: .clampToEdge,
+            addressModeR: .clampToEdge,
+            compareFunction: .always,
+            maxAnisotropy: 1,
+            lodMinClamp: 0,
+            lodMaxClamp: 1,
+            label: "mt material sampler"
+        )
+        if let sampler = device.createSampler(samplerDescriptor) {
+            material.setFragmentSampler(sampler, index: 0)
+            XCTAssertEqual(material.fragmentSamplers.count, 1)
+        }
         XCTAssertTrue(materials.removeMaterial("default"))
 
         let lights = LightManager()
@@ -280,6 +336,13 @@ final class SceneTests: XCTestCase {
             return
         }
         XCTAssertGreaterThan(buffer.length, 0)
+        if let shadow = ShadowMap.create(
+            device: device,
+            descriptor: ShadowMapDescriptor.directionalFixture()
+        ) {
+            XCTAssertEqual(shadow.descriptor.cascades, 4)
+            XCTAssertEqual(shadow.texture.pixelFormat, .depth32Float)
+        }
     }
 }
 

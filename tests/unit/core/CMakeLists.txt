@@ -12,4 +12,5 @@ endfunction()
 mt_add_core_test(error error.cpp)
 mt_add_core_test(result result.cpp)
 mt_add_core_test(native_handle native_handle.cpp)
+mt_add_core_test(validation validation.cpp)
 

@@ -3,5 +3,19 @@
 include("${CMAKE_CURRENT_LIST_DIR}/mtTargets.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/mtMetal.cmake")
 
+if("@MT_BUILD_PYTHON@")
+    include(CMakeFindDependencyMacro)
+
+    function(mt_enable_python)
+        find_dependency(
+            Python3
+            COMPONENTS
+                Interpreter
+                Development.Module
+        )
+        include("${CMAKE_CURRENT_LIST_DIR}/mtPythonTargets.cmake")
+    endfunction()
+endif()
+
 check_required_components(mt)
 

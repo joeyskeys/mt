@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "run": {
+    "timestamp_utc": "1970-01-01T00:00:00Z",
+    "commit": "unrecorded",
+    "command": "not_run",
+    "status": "not_run",
+    "notes": "Template only; replace every placeholder before recording evidence."
+  },
+  "device": {
+    "macos": "unrecorded",
+    "name": "unrecorded",
+    "registry_id": "unrecorded",
+    "device_type": "unrecorded",
+    "unified_memory": false,
+    "metal_family": "unrecorded",
+    "os_build": "unrecorded"
+  },
+  "configuration": {
+    "xcode": "unrecorded",
+    "sdk": "unrecorded",
+    "swift": "unrecorded",
+    "build_type": "unknown",
+    "api_validation": false,
+    "gpu_capture": false
+  },
+  "checks": [],
+  "capabilities": [],
+  "performance": []
+}

@@ -8,6 +8,8 @@ namespace mt {
 using MTKViewSurfaceConfiguration =
     MTMetalKit::MTKViewSurfaceConfiguration;
 using MTKViewSurfaceAdapter = MTMetalKit::MTKViewSurfaceAdapter;
+using MTKViewWindowConfiguration = MTMetalKit::MTKViewWindowConfiguration;
+using MTKViewWindowHost = MTMetalKit::MTKViewWindowHost;
 
 } // namespace mt
 

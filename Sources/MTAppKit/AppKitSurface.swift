@@ -23,11 +23,18 @@ public struct AppKitSurfaceConfiguration {
         self.presentsWithTransaction = presentsWithTransaction
         self.displaySyncEnabled = displaySyncEnabled
     }
+
+    public var isValid: Bool {
+        pixelFormat != .invalid
+            && drawableSize.width > 0
+            && drawableSize.height > 0
+    }
 }
 
 public final class AppKitSurfaceAdapter {
     private weak var viewStorage: NSView?
     private let layerStorage: CAMetalLayer
+    private var lastDrawableAvailableStorage = false
     public let surface: Surface
 
     public init?(
@@ -107,14 +114,42 @@ public final class AppKitSurfaceAdapter {
         return Double(layerStorage.contentsScale)
     }
 
+    public var isAttached: Bool {
+        viewStorage != nil || layerStorage.device != nil
+    }
+
+    public var lastDrawableAvailable: Bool {
+        lastDrawableAvailableStorage
+    }
+
+    public var framebufferOnly: Bool {
+        get { layerStorage.framebufferOnly }
+        set { layerStorage.framebufferOnly = newValue }
+    }
+
+    public var presentsWithTransaction: Bool {
+        get { layerStorage.presentsWithTransaction }
+        set { layerStorage.presentsWithTransaction = newValue }
+    }
+
+    public var displaySyncEnabled: Bool {
+        get { layerStorage.displaySyncEnabled }
+        set { layerStorage.displaySyncEnabled = newValue }
+    }
+
     public func resize(width: UInt32, height: UInt32) -> Bool {
-        surface.resize(width: width, height: height)
+        let didResize = surface.resize(width: width, height: height)
+        if didResize {
+            lastDrawableAvailableStorage = false
+        }
+        return didResize
     }
 
     public func resizeToView() -> Bool {
         guard let view = viewStorage else {
             return false
         }
+        layerStorage.frame = view.bounds
         let backingBounds = view.convertToBacking(view.bounds)
         let width = UInt32(max(0, Int(backingBounds.width)))
         let height = UInt32(max(0, Int(backingBounds.height)))
@@ -125,13 +160,22 @@ public final class AppKitSurfaceAdapter {
     }
 
     public func nextDrawable() -> Drawable? {
-        surface.nextDrawable()
+        let drawable = surface.nextDrawable()
+        lastDrawableAvailableStorage = drawable != nil
+        return drawable
     }
 
     public func makeRenderPassDescriptor(
         _ drawable: Drawable
     ) -> RenderPassDescriptor? {
         surface.makeRenderPassDescriptor(drawable)
+    }
+
+    public func present(
+        _ drawable: Drawable,
+        on commandBuffer: CommandBuffer
+    ) -> Bool {
+        commandBuffer.present(drawable)
     }
 
     public func nativeLayerHandle() -> UnsafeMutableRawPointer {
@@ -194,6 +238,160 @@ public final class AppKitSurfaceAdapter {
         default:
             return nil
         }
+    }
+}
+
+public struct AppKitWindowConfiguration {
+    public var widthPoints: Double
+    public var heightPoints: Double
+    public var title: String
+    public var pixelFormat: PixelFormat
+    public var framebufferOnly: Bool
+    public var presentsWithTransaction: Bool
+    public var displaySyncEnabled: Bool
+
+    public init(
+        widthPoints: Double,
+        heightPoints: Double,
+        title: String,
+        pixelFormat: PixelFormat,
+        framebufferOnly: Bool,
+        presentsWithTransaction: Bool,
+        displaySyncEnabled: Bool
+    ) {
+        self.widthPoints = widthPoints
+        self.heightPoints = heightPoints
+        self.title = title
+        self.pixelFormat = pixelFormat
+        self.framebufferOnly = framebufferOnly
+        self.presentsWithTransaction = presentsWithTransaction
+        self.displaySyncEnabled = displaySyncEnabled
+    }
+
+    public var isValid: Bool {
+        widthPoints.isFinite
+            && heightPoints.isFinite
+            && widthPoints > 0
+            && heightPoints > 0
+            && pixelFormat != .invalid
+    }
+}
+
+/// A small native consumer fixture. It owns only the window and view.
+/// Devices, queues, frame scheduling, and rendering remain application-owned.
+public final class AppKitWindowHost {
+    private let windowStorage: NSWindow
+    private let viewStorage: NSView
+    public let adapter: AppKitSurfaceAdapter
+
+    public init?(
+        device: Device,
+        configuration: AppKitWindowConfiguration
+    ) {
+        guard configuration.isValid else {
+            return nil
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: configuration.widthPoints,
+                height: configuration.heightPoints
+            ),
+            styleMask: [
+                .titled,
+                .closable,
+                .miniaturizable,
+                .resizable
+            ],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = configuration.title
+        window.isReleasedWhenClosed = false
+
+        let view = NSView(
+            frame: NSRect(
+                x: 0,
+                y: 0,
+                width: configuration.widthPoints,
+                height: configuration.heightPoints
+            )
+        )
+        window.contentView = view
+
+        let scaleFactor = max(1, window.backingScaleFactor)
+        let drawableSize = Extent(
+            width: UInt32(
+                max(1, Int(configuration.widthPoints * scaleFactor))
+            ),
+            height: UInt32(
+                max(1, Int(configuration.heightPoints * scaleFactor))
+            )
+        )
+        let surfaceConfiguration = AppKitSurfaceConfiguration(
+            pixelFormat: configuration.pixelFormat,
+            drawableSize: drawableSize,
+            framebufferOnly: configuration.framebufferOnly,
+            presentsWithTransaction: configuration.presentsWithTransaction,
+            displaySyncEnabled: configuration.displaySyncEnabled
+        )
+        guard let adapter = AppKitSurfaceAdapter(
+            nativeView: Unmanaged.passUnretained(view).toOpaque(),
+            device: device,
+            configuration: surfaceConfiguration
+        ) else {
+            return nil
+        }
+
+        self.windowStorage = window
+        self.viewStorage = view
+        self.adapter = adapter
+    }
+
+    public var windowHandle: UnsafeMutableRawPointer {
+        Unmanaged.passUnretained(windowStorage).toOpaque()
+    }
+
+    public var viewHandle: UnsafeMutableRawPointer {
+        Unmanaged.passUnretained(viewStorage).toOpaque()
+    }
+
+    public var isVisible: Bool {
+        windowStorage.isVisible
+    }
+
+    public var backingScaleFactor: Double {
+        max(1, windowStorage.backingScaleFactor)
+    }
+
+    public func show() {
+        windowStorage.makeKeyAndOrderFront(nil)
+    }
+
+    public func hide() {
+        windowStorage.orderOut(nil)
+    }
+
+    public func resize(widthPoints: Double, heightPoints: Double) -> Bool {
+        guard widthPoints.isFinite,
+              heightPoints.isFinite,
+              widthPoints > 0,
+              heightPoints > 0
+        else {
+            return false
+        }
+        windowStorage.setContentSize(
+            NSSize(width: widthPoints, height: heightPoints)
+        )
+        viewStorage.layoutSubtreeIfNeeded()
+        return adapter.resizeToView()
+    }
+
+    public func syncDrawableSize() -> Bool {
+        viewStorage.layoutSubtreeIfNeeded()
+        return adapter.resizeToView()
     }
 }
 

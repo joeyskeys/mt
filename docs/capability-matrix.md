@@ -103,7 +103,45 @@ For every run, record:
 ### Viewport picking
 
 - Minimum path: RGBA8 ID pass, private-to-shared blit, polled readback.
-- Native extensions:
+- Native extensions: optional depth32-float and RGBA32-float normal
+  attachments, deterministic scene/vertex IDs, and memoryless/tile/mesh
+  capability selection with explicit baseline fallback.
+- Tile/mesh picking must remain reported as `resourcesUnavailable` until a
+  native picking pipeline has the required tile/mesh resources; it must not
+  be reported as selected while recording the baseline raster path.
+- Selected acceleration path/fallback reason:
+- Depth/normal readback result:
 - Resize/in-flight result:
+- Tests/examples:
+
+### Scene, materials, and built-in shaders
+
+- Indexed representation and optional meshlet representation:
+- Versioned GPU synchronization and retirement result:
+- Material binding path (direct slots or argument buffers):
+- Forward+ cluster and shadow-resource result:
+- Built-in shader families and indexed fallbacks:
+- Tests/examples:
+
+### Native host integrations
+
+- AppKit/CAMetalLayer adapter result:
+- MTKView adapter result:
+- Retina scale and drawable-size result:
+- Drawable unavailable/resize recovery result:
+- Presentation and application-owned frame-loop result:
+- Input translation result:
+- GLFW/Qt status: not enabled until a concrete native-layer ownership
+  contract and consumer are supplied.
+- Tests/examples:
+
+### GUI and text integrations
+
+- ImGui version/initialization and frame-phase result:
+- ImGui input translation and external-renderer boundary:
+- CoreText font/glyph/Unicode fallback result:
+- Atlas dimensions, sampler, texture upload, and text-mesh result:
+- FreeType value-bridge result and external `FT_Face` ownership:
+- Optional-target/core dependency-isolation result:
 - Tests/examples:
 

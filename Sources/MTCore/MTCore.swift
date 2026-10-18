@@ -4025,6 +4025,48 @@ public final class Heap {
         return Texture(native: texture, usage: descriptor.usage)
     }
 
+    /// Wraps an application-owned MTLTexture handle after validating that it
+    /// belongs to this device. The wrapper retains the Metal resource; the
+    /// raw handle is borrowed only for the duration of this call.
+    public func wrapTexture(
+        nativeHandle: UnsafeMutableRawPointer,
+        usage: UInt32,
+        label: String = ""
+    ) -> Texture? {
+        let object = Unmanaged<AnyObject>
+            .fromOpaque(nativeHandle)
+            .takeUnretainedValue()
+        guard let texture = object as? MTLTexture,
+              texture.device.registryID == native.registryID else {
+            return nil
+        }
+        if !label.isEmpty {
+            texture.label = label
+        }
+        return Texture(native: texture, usage: usage)
+    }
+
+    /// Wraps an application-owned MTLBuffer handle after validating that it
+    /// belongs to this device. The wrapper retains the Metal resource; the
+    /// raw handle is borrowed only for the duration of this call.
+    public func wrapBuffer(
+        nativeHandle: UnsafeMutableRawPointer,
+        usage: UInt32,
+        label: String = ""
+    ) -> Buffer? {
+        let object = Unmanaged<AnyObject>
+            .fromOpaque(nativeHandle)
+            .takeUnretainedValue()
+        guard let buffer = object as? MTLBuffer,
+              buffer.device.registryID == native.registryID else {
+            return nil
+        }
+        if !label.isEmpty {
+            buffer.label = label
+        }
+        return Buffer(native: buffer, usage: usage)
+    }
+
     public func nativeHandle() -> UnsafeMutableRawPointer {
         Unmanaged.passUnretained(native as AnyObject).toOpaque()
     }
@@ -4802,6 +4844,85 @@ public final class RenderPassDescriptor {
         self.init(texture: colorTexture.native)
     }
 
+    public func setColorAttachment(
+        _ texture: Texture,
+        index: UInt32
+    ) -> Bool {
+        guard index < 8, texture.pixelFormat.isColorFormat else {
+            validationErrorStorage =
+                "Color attachment index or format is invalid."
+            return false
+        }
+        let attachment = nativeDescriptor.colorAttachments[Int(index)]
+        attachment.texture = texture.native
+        if index == 0 {
+            colorTexture = texture.native
+        }
+        validationErrorStorage = ""
+        return true
+    }
+
+    public func clearColorAttachment(index: UInt32) -> Bool {
+        guard index < 8 else {
+            return false
+        }
+        guard index != 0 else {
+            validationErrorStorage =
+                "The primary color attachment cannot be cleared."
+            return false
+        }
+        nativeDescriptor.colorAttachments[Int(index)].texture = nil
+        return true
+    }
+
+    public func configureColorAttachment(
+        index: UInt32,
+        loadAction: RenderLoadAction,
+        storeAction: RenderStoreAction,
+        clearColor: ClearColor
+    ) -> Bool {
+        guard index < 8,
+              nativeDescriptor.colorAttachments[Int(index)].texture != nil,
+              [
+                  clearColor.red,
+                  clearColor.green,
+                  clearColor.blue,
+                  clearColor.alpha
+              ].allSatisfy({ $0.isFinite }) else {
+            validationErrorStorage =
+                "The color attachment configuration is invalid."
+            return false
+        }
+        let attachment = nativeDescriptor.colorAttachments[Int(index)]
+        attachment.loadAction = loadAction.metalLoadAction
+        attachment.storeAction = storeAction.metalStoreAction
+        attachment.clearColor = MTLClearColor(
+            red: clearColor.red,
+            green: clearColor.green,
+            blue: clearColor.blue,
+            alpha: clearColor.alpha
+        )
+        validationErrorStorage = ""
+        return true
+    }
+
+    public func colorFormat(at index: UInt32) -> PixelFormat? {
+        guard index < 8,
+              let texture = nativeDescriptor.colorAttachments[Int(index)]
+                  .texture else {
+            return nil
+        }
+        return PixelFormat(metalFormat: texture.pixelFormat)
+    }
+
+    public var colorAttachmentCount: UInt32 {
+        UInt32(
+            (0..<8).filter {
+                nativeDescriptor.colorAttachments[$0].texture != nil
+            }.count
+        )
+    }
+
     public func setColorAttachment(_ target: RenderTarget) -> Bool {
         guard target.nativeTexture.pixelFormat.isColorFormat,
               (
@@ -5023,6 +5144,45 @@ public final class RenderPassDescriptor {
         guard colorFormat.isColorFormat else {
             validationErrorStorage = "The color attachment format is invalid."
             return false
+        }
+
+        for index in 1..<8 {
+            guard let texture =
+                    nativeDescriptor.colorAttachments[index].texture else {
+                continue
+            }
+            let attachment = nativeDescriptor.colorAttachments[index]
+            let format = PixelFormat(metalFormat: texture.pixelFormat)
+            guard format.isColorFormat,
+                  texture.sampleCount == sampleCount,
+                  attachment.storeAction != .multisampleResolve else {
+                validationErrorStorage =
+                    "An additional color attachment is invalid."
+                return false
+            }
+            if attachment.loadAction == .clear {
+                let clear = attachment.clearColor
+                guard [
+                    clear.red,
+                    clear.green,
+                    clear.blue,
+                    clear.alpha
+                ].allSatisfy({ $0.isFinite }) else {
+                    validationErrorStorage =
+                        "An additional color clear value is invalid."
+                    return false
+                }
+            }
+            if texture.storageMode == .memoryless {
+                guard attachment.loadAction != .load,
+                      attachment.storeAction != .store,
+                      attachment.storeAction != .multisampleResolve else {
+                    validationErrorStorage =
+                        "Memoryless color attachments cannot be loaded "
+                        + "or stored."
+                    return false
+                }
+            }
         }
 
         if colorLoadAction == .clear {
@@ -10749,6 +10909,99 @@ public final class Device {
             ),
             availabilitySource: "MTLDevice capability and family queries"
         )
+    }
+}
+
+/// A small, headless fixture used by installed-package validation.
+///
+/// This lives in the wrapper rather than in a host application so an external
+/// C++ consumer can prove that the packaged Swift/C++ boundary reaches a real
+/// Metal render pass and a deterministic readback. It deliberately uses only
+/// the baseline render-target path; capability-specific behavior belongs in
+/// the runtime suites and examples.
+public final class OffscreenValidationFixture {
+    private init() {}
+
+    public static func validateClearReadback(device: Device) -> Bool {
+        let storageModes: [StorageMode] = [.shared, .managed]
+        for storageMode in storageModes {
+            guard let texture = device.createTexture(
+                TextureDescriptor(
+                    textureType: .twoD,
+                    pixelFormat: .rgba8Unorm,
+                    width: 2,
+                    height: 2,
+                    depth: 1,
+                    arrayLength: 1,
+                    mipLevelCount: 1,
+                    sampleCount: 1,
+                    usage: UInt32(TextureUsage.renderTarget.rawValue),
+                    storageMode: storageMode,
+                    cpuCacheMode: .defaultCache,
+                    hazardMode: .defaultMode,
+                    label: "mt installed validation target"
+                )
+            ),
+            let queue = device.createCommandQueue(
+                label: "mt installed validation queue"
+            ),
+            let commandBuffer = queue.makeCommandBuffer()
+            else {
+                continue
+            }
+
+            let pass = RenderPassDescriptor(colorTexture: texture)
+            pass.clearColor = ClearColor(
+                red: 1,
+                green: 0,
+                blue: 0,
+                alpha: 1
+            )
+            guard let encoder = commandBuffer.makeRenderEncoder(pass),
+                  encoder.endEncoding()
+            else {
+                continue
+            }
+
+            if storageMode == .managed {
+                guard let blit = commandBuffer.makeBlitEncoder(),
+                      blit.synchronize(texture),
+                      blit.endEncoding()
+                else {
+                    continue
+                }
+            }
+
+            guard commandBuffer.commit() else {
+                continue
+            }
+            commandBuffer.waitUntilCompleted()
+            guard commandBuffer.didSucceed else {
+                continue
+            }
+
+            var bytes = [UInt8](repeating: 0, count: 2 * 2 * 4)
+            let didRead = bytes.withUnsafeMutableBytes { rawBytes in
+                texture.readBaseLevel2D(
+                    destination: rawBytes.baseAddress!,
+                    bytesPerRow: 2 * 4,
+                    bytesPerImage: UInt64(bytes.count)
+                )
+            }
+            guard didRead else {
+                continue
+            }
+
+            let expected: [UInt8] = [255, 0, 0, 255]
+            let matches = stride(from: 0, to: bytes.count, by: 4)
+                .allSatisfy { index in
+                    Array(bytes[index..<(index + 4)]) == expected
+                }
+            if matches {
+                return true
+            }
+        }
+        return false
     }
 }
 

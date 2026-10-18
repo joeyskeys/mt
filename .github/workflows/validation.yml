@@ -1,0 +1,200 @@
+name: mt validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      validate_python:
+        description: "Run the opt-in Python integration validation"
+        required: false
+        default: false
+        type: boolean
+  push:
+    paths:
+      - "Sources/**"
+      - "python/**"
+      - "Package.swift"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "include/**"
+      - "tests/**"
+      - "examples/**"
+      - "scripts/**"
+      - "docs/integrations/**"
+      - ".github/workflows/validation.yml"
+  pull_request:
+    paths:
+      - "Sources/**"
+      - "python/**"
+      - "Package.swift"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "include/**"
+      - "tests/**"
+      - "examples/**"
+      - "scripts/**"
+      - "docs/integrations/**"
+      - ".github/workflows/validation.yml"
+
+jobs:
+  package:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Configure
+        run: >
+          cmake -S . -B build/${{ matrix.build_type }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DMT_BUILD_TESTS=ON
+          -DMT_BUILD_EXAMPLES=ON
+          -DMT_BUILD_INSTALLED_CONSUMER=ON
+      - name: Build
+        run: cmake --build build/${{ matrix.build_type }} --config ${{ matrix.build_type }}
+      - name: CTest
+        run: >
+          ctest --test-dir build/${{ matrix.build_type }}
+          --build-config ${{ matrix.build_type }}
+          --output-on-failure
+      - name: SwiftPM tests
+        if: matrix.build_type == 'Debug'
+        run: swift test --configuration debug
+      - name: SwiftPM release build
+        if: matrix.build_type == 'Release'
+        run: swift build --configuration release
+
+  optional-hosts:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Configure optional host targets
+        run: >
+          cmake -S . -B build/optional-hosts
+          -DCMAKE_BUILD_TYPE=Debug
+          -DMT_BUILD_TESTS=ON
+          -DMT_BUILD_EXAMPLES=ON
+          -DMT_BUILD_APPKIT=ON
+          -DMT_BUILD_MTKVIEW=ON
+          -DMT_BUILD_HOST_EXAMPLES=ON
+          -DMT_BUILD_INSTALLED_CONSUMER=ON
+      - name: Build optional host targets
+        run: cmake --build build/optional-hosts --config Debug
+      - name: Run host API-shape tests
+        run: >
+          ctest --test-dir build/optional-hosts
+          --build-config Debug
+          --output-on-failure
+          -R 'mt\.unit\.host\.|mt\.consumer\.installed'
+
+  optional-gui-text:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Configure optional GUI and text targets
+        run: >
+          cmake -S . -B build/optional-gui-text
+          -DCMAKE_BUILD_TYPE=Debug
+          -DMT_BUILD_TESTS=ON
+          -DMT_BUILD_EXAMPLES=ON
+          -DMT_BUILD_APPKIT=ON
+          -DMT_BUILD_IMGUI=ON
+          -DMT_BUILD_TEXT=ON
+          -DMT_BUILD_FREETYPE_BRIDGE=ON
+          -DMT_BUILD_GUI_TEXT_EXAMPLES=ON
+          -DMT_BUILD_INSTALLED_CONSUMER=ON
+      - name: Build optional GUI and text targets
+        run: cmake --build build/optional-gui-text --config Debug
+      - name: Run GUI and text API-shape tests
+        run: >
+          ctest --test-dir build/optional-gui-text
+          --build-config Debug
+          --output-on-failure
+          -R 'mt\.unit\.gui_text\.|mt\.consumer\.installed'
+
+  optional-asset-pipeline:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Configure asset-pipeline target
+        run: >
+          cmake -S . -B build/optional-asset-pipeline
+          -DCMAKE_BUILD_TYPE=Debug
+          -DMT_BUILD_TESTS=ON
+          -DMT_BUILD_EXAMPLES=ON
+          -DMT_BUILD_ASSET_PIPELINE=ON
+          -DMT_BUILD_ASSET_PIPELINE_EXAMPLES=ON
+          -DMT_BUILD_INSTALLED_CONSUMER=ON
+      - name: Build asset-pipeline target
+        run: cmake --build build/optional-asset-pipeline --config Debug
+      - name: Run asset-pipeline API and package checks
+        run: >
+          ctest --test-dir build/optional-asset-pipeline
+          --build-config Debug
+          --output-on-failure
+          -R 'mt\.unit\.asset_pipeline\.|mt\.consumer\.installed'
+
+  optional-external-resources:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Configure external-resource target
+        run: >
+          cmake -S . -B build/optional-external-resources
+          -DCMAKE_BUILD_TYPE=Debug
+          -DMT_BUILD_TESTS=ON
+          -DMT_BUILD_EXAMPLES=ON
+          -DMT_BUILD_EXTERNAL_RESOURCES=ON
+          -DMT_BUILD_INSTALLED_CONSUMER=ON
+      - name: Build external-resource target
+        run: cmake --build build/optional-external-resources --config Debug
+      - name: Run external-resource API and package checks
+        run: >
+          ctest --test-dir build/optional-external-resources
+          --build-config Debug
+          --output-on-failure
+          -R 'mt\.unit\.external_resources\.|mt\.consumer\.installed'
+
+  optional-python:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.validate_python }}
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Select explicit Python installation
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run opt-in Python validation
+        run: |
+          python_executable="$(command -v python)"
+          python_root="$(python -c 'import sys; print(sys.prefix)')"
+          MT_VALIDATE_PYTHON=1 \
+            MT_PYTHON_EXECUTABLE="${python_executable}" \
+            MT_PYTHON_ROOT="${python_root}" \
+            bash scripts/validate_package.sh
+
