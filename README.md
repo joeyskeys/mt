@@ -18,6 +18,268 @@ integration in consuming C++ projects, AppKit, or `MTKView`.
 - CMake 3.26+ with a Swift 5.9-compatible toolchain
 - Clang/Xcode toolchain for C++ interoperability
 
+The commands below must run on macOS with the Metal SDK available. The
+repository intentionally does not provide a non-Apple build; runtime checks
+also need a Mac with a usable Metal device.
+
+## Build from source
+
+Run these commands from the repository root. Use CMake when you are building
+the C++ package or its generated interoperability headers. Use SwiftPM when
+you are developing against the Swift products or running the Swift test
+targets.
+
+### CMake Debug build
+
+Configure the core library, C++ tests, and examples:
+
+```sh
+cmake -S . -B build/cmake-debug \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DMT_BUILD_TESTS=ON \
+  -DMT_BUILD_EXAMPLES=ON
+```
+
+Build and run the CMake test suite:
+
+```sh
+cmake --build build/cmake-debug --config Debug
+ctest --test-dir build/cmake-debug \
+  --build-config Debug \
+  --output-on-failure
+```
+
+The default configuration builds the `mt::mt` library, the public-header and
+external-consumer checks, `mt-example-consumer-smoke`, and
+`mt-example-runtime-smoke`. Build an individual example with its CMake target:
+
+```sh
+cmake --build build/cmake-debug \
+  --config Debug \
+  --target mt-example-runtime-smoke
+```
+
+Run the capability-aware launcher with an entry point from
+[`examples/validation-matrix.json`](examples/validation-matrix.json), for
+example:
+
+```sh
+./build/cmake-debug/examples/mt-example-runtime-smoke device_info
+```
+
+When using a multi-configuration generator such as Xcode, the executable is
+under the generator's configuration directory, usually
+`build/cmake-debug/Debug/examples/`.
+
+### Release build and installation
+
+Use a separate build directory for Release artifacts:
+
+```sh
+cmake -S . -B build/cmake-release \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DMT_BUILD_TESTS=ON \
+  -DMT_BUILD_EXAMPLES=ON
+cmake --build build/cmake-release --config Release
+cmake --install build/cmake-release \
+  --config Release \
+  --prefix "$PWD/install/mt"
+```
+
+Installation produces the Swift library, generated `MTCore-Swift.h`, C++
+facade headers, built-in MSL, and the `mt` CMake package configuration. Do not
+copy the generated header from a previous build: it must match the Swift
+compiler, SDK, and public Swift declarations used to build the library.
+
+To validate the installed package as an external project, enable the installed
+consumer test and run CTest:
+
+```sh
+cmake -S . -B build/cmake-package \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DMT_BUILD_TESTS=ON \
+  -DMT_BUILD_EXAMPLES=ON \
+  -DMT_BUILD_INSTALLED_CONSUMER=ON
+cmake --build build/cmake-package --config Debug
+ctest --test-dir build/cmake-package \
+  --build-config Debug \
+  --output-on-failure \
+  -R 'mt\.consumer\.installed'
+```
+
+The installed-consumer check installs into a build-local prefix, configures a
+separate project with `find_package(mt CONFIG REQUIRED)`, builds it against
+the installed files, and runs a headless command-buffer/offscreen fixture.
+
+### SwiftPM build and tests
+
+SwiftPM exposes the Swift products declared in `Package.swift`:
+
+```sh
+swift build --package-path . --configuration debug
+swift test --package-path . --configuration debug
+swift build --package-path . --configuration release
+```
+
+### Repeatable package validation
+
+For the complete local validation used by the project, run:
+
+```sh
+bash scripts/validate_package.sh
+```
+
+This creates separate CMake Debug and Release builds, runs their CTest suites
+with the installed-consumer check enabled, then runs SwiftPM debug tests and a
+SwiftPM Release build. Set `MT_VALIDATION_BUILD_ROOT` to place the generated
+validation builds elsewhere. Optional integrations are enabled explicitly:
+
+| Environment variable | Effect |
+| --- | --- |
+| `MT_VALIDATE_OPTIONAL_HOSTS=1` | Validate AppKit, MTKView, and native host examples |
+| `MT_VALIDATE_GUI_TEXT=1` | Validate ImGui, CoreText, and FreeType bridge targets |
+| `MT_VALIDATE_ASSET_PIPELINE=1` | Validate the asset-pipeline target and example |
+| `MT_VALIDATE_EXTERNAL_RESOURCES=1` | Validate the IOSurface target |
+| `MT_VALIDATE_PYTHON=1` | Validate Python; also set `MT_PYTHON_EXECUTABLE` |
+
+These commands are intended for a Metal-capable Mac. Unsupported GPU
+capabilities are reported as fallbacks by the runtime validation paths rather
+than being silently counted as native feature passes.
+
+### Optional CMake targets
+
+Optional integrations stay disabled unless their dependencies and contracts
+are wanted by the application. Add the relevant options to a fresh CMake
+configuration:
+
+| Option | Default | Enables |
+| --- | --- | --- |
+| `MT_BUILD_APPKIT` | `OFF` | `mt::mt-appkit` and the AppKit/CAMetalLayer adapter |
+| `MT_BUILD_MTKVIEW` | `OFF` | `mt::mt-mtkview` and the MTKView adapter |
+| `MT_BUILD_HOST_EXAMPLES` | `OFF` | Native AppKit/MTKView window consumers; also requires the corresponding adapter |
+| `MT_BUILD_IMGUI` | `OFF` | `mt::mt-imgui` coordination boundary |
+| `MT_BUILD_TEXT` | `OFF` | `mt::mt-text` CoreText glyph/atlas/mesh layer |
+| `MT_BUILD_FREETYPE_BRIDGE` | `OFF` | `mt::mt-freetype`; it also enables `MT_BUILD_TEXT` |
+| `MT_BUILD_GUI_TEXT_EXAMPLES` | `OFF` | ImGui-boundary and text-atlas examples |
+| `MT_BUILD_ASSET_PIPELINE` | `OFF` | `mt::mt-asset-pipeline` |
+| `MT_BUILD_ASSET_PIPELINE_EXAMPLES` | `OFF` | Asset-pipeline consumer example; also requires `MT_BUILD_ASSET_PIPELINE` |
+| `MT_BUILD_EXTERNAL_RESOURCES` | `OFF` | `mt::mt-external-resources` and IOSurface support |
+| `MT_BUILD_PYTHON` | `OFF` | The optional CPython extension |
+| `MT_BUILD_INSTALLED_CONSUMER` | `OFF` | The separate installed-package CTest |
+
+For optional examples and the ownership rules of each integration, see
+[`examples/README.md`](examples/README.md) and the contracts under
+[`docs/integrations/`](docs/integrations/).
+
+## Use from C++
+
+The installed CMake package is the supported C++ consumption path. A consumer
+should include `mt/mt.hpp`, link `mt::mt`, and never include the generated
+`MTCore-Swift.h` directly.
+
+### Minimal C++ consumer
+
+After installing the project as shown above, a downstream `CMakeLists.txt`
+can use the package like this:
+
+```cmake
+cmake_minimum_required(VERSION 3.26)
+project(mt_example LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+find_package(mt CONFIG REQUIRED)
+
+add_executable(mt-example main.cpp)
+target_link_libraries(mt-example PRIVATE mt::mt)
+```
+
+Configure the downstream project with the installation prefix:
+
+```sh
+cmake -S . -B build \
+  -DCMAKE_PREFIX_PATH="/absolute/path/to/install/mt"
+cmake --build build
+```
+
+`main.cpp` can start with a device, queue, and command-buffer ownership
+sequence like this:
+
+```cpp
+#include <iostream>
+
+#include <mt/mt.hpp>
+
+int main() {
+    const auto devices = mt::Device::enumerate();
+    auto device = mt::Device::systemDefault();
+    if (!device) {
+        std::cerr << "No Metal device is available\n";
+        return devices.empty() ? 0 : 1;
+    }
+
+    auto queue = device->createCommandQueue();
+    if (!queue) {
+        return 2;
+    }
+
+    auto commandBuffer = queue->makeCommandBuffer();
+    if (!commandBuffer || !commandBuffer->commit()) {
+        return 3;
+    }
+
+    commandBuffer->waitUntilCompleted();
+    return commandBuffer->didSucceed() ? 0 : 4;
+}
+```
+
+For real rendering, create encoders from the command buffer, encode resource
+and pipeline work, end each encoder, then commit the buffer. Applications
+should normally use completion tokens or polling instead of blocking every
+frame with `waitUntilCompleted()`.
+
+### Ownership and capability rules
+
+- The application owns the device, command queue, command buffers, renderer,
+  frame loop, and event loop. The core has no global context.
+- `Device::enumerate()` reports available devices and
+  `Device::systemDefault()` selects the system default. Check the returned
+  device and queue/command-buffer results before using them.
+- Query `device->capabilities()` before selecting mesh shaders, argument
+  buffers, indirect command buffers, tile/memoryless paths, ray tracing, or
+  other Metal-native extensions. Select and report an explicit fallback when a
+  capability is unavailable.
+- The core is window-system neutral. Enable the AppKit or MTKView targets only
+  when the application wants an adapter around a borrowed native view/layer.
+  Drawable acquisition, resize handling, presentation, and command-buffer
+  submission remain explicit in the application.
+- `mt/mt.hpp` is the aggregate public C++ surface. The focused headers such as
+  `mt/renderer.hpp`, `mt/scene.hpp`, `mt/viewport.hpp`, and
+  `mt/picking.hpp` can be included when a consumer wants a narrower dependency
+  surface.
+
+### Compiled Metal shaders
+
+Installed consumers can use the packaged `mt_add_metallib()` helper to compile
+MSL at build time:
+
+```cmake
+find_package(mt CONFIG REQUIRED)
+
+mt_add_metallib(app_shaders
+  SOURCES shaders/app.metal
+  INSTALL_DESTINATION share/my-app/shaders
+)
+add_dependencies(mt-example app_shaders)
+```
+
+The helper uses `xcrun metal` and `xcrun metallib`, exposes the generated path
+as `app_shaders_METALLIB`, and can install the resulting library. Prefer
+precompiled metallibs for Release applications; runtime MSL compilation is
+intended for development and diagnostics.
+
 The core Metal module uses Swift's `Metal` framework APIs. C++ consumers link
 the Swift library and include the generated `MTCore-Swift.h` through
 `include/mt/mt.hpp`.
