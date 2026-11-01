@@ -45,17 +45,17 @@ bool nativePathAvailable(
     const mt::DeviceCapabilities& capabilities
 ) {
     if (name == "mesh_triangle") {
-        return capabilities.meshShaders();
+        return capabilities.getMeshShaders();
     }
     if (name == "argument_buffer_materials") {
-        return capabilities.maxArgumentBufferSamplerCount() > 0;
+        return capabilities.getMaxArgumentBufferSamplerCount() > 0;
     }
     if (name == "gpu_culling") {
-        return capabilities.indirectCommandBuffers();
+        return capabilities.getIndirectCommandBuffers();
     }
     if (name == "tile_pass") {
-        return capabilities.tileShaders()
-            && capabilities.memorylessAttachments();
+        return capabilities.getTileShaders()
+            && capabilities.getMemorylessAttachments();
     }
     if (name == "window_triangle") {
         // This executable is deliberately host-neutral. The AppKit adapter is
@@ -82,12 +82,13 @@ int main(int argc, char** argv) {
 
     const auto devices = mt::Device::enumerate();
     auto device = mt::Device::systemDefault();
-    std::cout << "device_count=" << devices.size() << '\n';
+    std::cout << "device_count=" << devices.getCount() << '\n';
     if (!device) {
-        return devices.empty() ? 0 : 3;
+        return devices.getCount() == 0 ? 0 : 3;
     }
 
-    const auto capabilities = device->capabilities();
+    auto deviceValue = device.get();
+    const auto capabilities = deviceValue.getCapabilities();
     const bool nativePath = nativePathAvailable(name, capabilities);
     std::cout << "native_path=" << (nativePath ? "available" : "unsupported")
               << '\n';
@@ -95,14 +96,14 @@ int main(int argc, char** argv) {
         std::cout << "fallback_path=" << requirement->fallback << '\n';
     }
 
-    auto queue = device->createCommandQueue();
+    auto queue = deviceValue.createCommandQueue("");
     if (!queue) {
         return 4;
     }
-    auto commandBuffer = queue->makeCommandBuffer();
-    if (!commandBuffer || !commandBuffer->commit()) {
+    auto commandBuffer = queue.get().makeCommandBuffer();
+    if (!commandBuffer || !commandBuffer.get().commit()) {
         return 5;
     }
-    commandBuffer->waitUntilCompleted();
+    commandBuffer.get().waitUntilCompleted();
     return 0;
 }

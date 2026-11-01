@@ -2,6 +2,11 @@ import Foundation
 import Metal
 import QuartzCore
 
+@inline(__always)
+private func requiredValue<T>(_ value: T?) -> T {
+    value!
+}
+
 public enum DeviceType: Int32 {
     case unknown
     case unified
@@ -245,7 +250,7 @@ public enum SamplerMipFilter: Int32 {
 public enum SamplerAddressMode: Int32 {
     case clampToEdge
     case mirrorClampToEdge
-    case repeat
+    case `repeat`
     case mirrorRepeat
     case clampToZero
 }
@@ -989,13 +994,13 @@ fileprivate extension PixelFormat {
         case .rg8Unorm:
             return .rg8Unorm
         case .rgba8Unorm:
-            return .rgba8Unorm
+            return MTLPixelFormat(rawValue: 70)!
         case .rgba8UnormSrgb:
-            return .rgba8Unorm_sRGB
+            return MTLPixelFormat(rawValue: 71)!
         case .bgra8Unorm:
-            return .bgra8Unorm
+            return MTLPixelFormat(rawValue: 80)!
         case .bgra8UnormSrgb:
-            return .bgra8Unorm_sRGB
+            return MTLPixelFormat(rawValue: 81)!
         case .r16Float:
             return .r16Float
         case .rg16Float:
@@ -1015,47 +1020,47 @@ fileprivate extension PixelFormat {
         case .stencil8:
             return .stencil8
         case .depth24UnormStencil8:
-            return .depth24Unorm_Stencil8
+            return MTLPixelFormat(rawValue: 255)!
         case .depth32FloatStencil8:
-            return .depth32Float_Stencil8
+            return MTLPixelFormat(rawValue: 260)!
         }
     }
 
     init(metalFormat: MTLPixelFormat) {
-        switch metalFormat {
-        case .r8Unorm:
+        switch metalFormat.rawValue {
+        case 10:
             self = .r8Unorm
-        case .rg8Unorm:
+        case 30:
             self = .rg8Unorm
-        case .rgba8Unorm:
+        case 70:
             self = .rgba8Unorm
-        case .rgba8Unorm_sRGB:
+        case 71:
             self = .rgba8UnormSrgb
-        case .bgra8Unorm:
+        case 80:
             self = .bgra8Unorm
-        case .bgra8Unorm_sRGB:
+        case 81:
             self = .bgra8UnormSrgb
-        case .r16Float:
+        case 110:
             self = .r16Float
-        case .rg16Float:
+        case 112:
             self = .rg16Float
-        case .rgba16Float:
+        case 115:
             self = .rgba16Float
-        case .r32Float:
+        case 122:
             self = .r32Float
-        case .rg32Float:
+        case 123:
             self = .rg32Float
-        case .rgba32Float:
+        case 124:
             self = .rgba32Float
-        case .depth16Unorm:
+        case 250:
             self = .depth16Unorm
-        case .depth32Float:
+        case 252:
             self = .depth32Float
-        case .stencil8:
+        case 253:
             self = .stencil8
-        case .depth24Unorm_Stencil8:
+        case 255:
             self = .depth24UnormStencil8
-        case .depth32Float_Stencil8:
+        case 260:
             self = .depth32FloatStencil8
         default:
             self = .invalid
@@ -1106,7 +1111,11 @@ fileprivate extension StorageMode {
         case .shared:
             return .shared
         case .managed:
+#if arch(arm64)
+            return .shared
+#else
             return .managed
+#endif
         case .gpuPrivate:
             return .private
         case .memoryless:
@@ -1119,7 +1128,11 @@ fileprivate extension StorageMode {
         case .shared:
             return .storageModeShared
         case .managed:
+#if arch(arm64)
+            return .storageModeShared
+#else
             return .storageModeManaged
+#endif
         case .gpuPrivate:
             return .storageModePrivate
         case .memoryless:
@@ -1156,7 +1169,7 @@ fileprivate extension CpuCacheMode {
     var metalResourceOption: MTLResourceOptions {
         switch self {
         case .defaultCache:
-            return .cpuCacheModeDefaultCache
+            return []
         case .writeCombined:
             return .cpuCacheModeWriteCombined
         }
@@ -1189,7 +1202,7 @@ fileprivate extension HazardMode {
     var metalResourceOption: MTLResourceOptions {
         switch self {
         case .defaultMode:
-            return .hazardTrackingModeDefault
+            return []
         case .untracked:
             return .hazardTrackingModeUntracked
         case .tracked:
@@ -1334,6 +1347,10 @@ fileprivate extension RenderStoreAction {
             self = .store
         case .multisampleResolve:
             self = .multisampleResolve
+        case .storeAndMultisampleResolve:
+            self = .multisampleResolve
+        case .unknown, .customSampleDepthStore:
+            self = .dontCare
         @unknown default:
             self = .dontCare
         }
@@ -1371,8 +1388,8 @@ fileprivate extension SamplerAddressMode {
             return .clampToEdge
         case .mirrorClampToEdge:
             return .mirrorClampToEdge
-        case .repeat:
-            return .repeat
+        case .`repeat`:
+            return .`repeat`
         case .mirrorRepeat:
             return .mirrorRepeat
         case .clampToZero:
@@ -1440,8 +1457,6 @@ fileprivate extension ShaderFunctionType {
             self = .object
         case .mesh:
             self = .mesh
-        case .tile:
-            self = .tile
         case .visible:
             self = .visible
         case .intersection:
@@ -1576,7 +1591,7 @@ fileprivate extension AccelerationStructureInstanceDescriptorType {
     var metalType: MTLAccelerationStructureInstanceDescriptorType {
         MTLAccelerationStructureInstanceDescriptorType(
             rawValue: UInt(rawValue)
-        )
+        )!
     }
 }
 
@@ -1700,7 +1715,7 @@ fileprivate extension FunctionConstantType {
         case .float:
             return .float
         case .double:
-            return .double
+            return .none
         }
     }
 }
@@ -3083,35 +3098,34 @@ fileprivate func metalRegion(_ region: TextureRegion) -> MTLRegion? {
 }
 
 fileprivate func bytesPerPixel(_ format: MTLPixelFormat) -> UInt64? {
-    switch format {
-    case .r8Unorm:
+    switch format.rawValue {
+    case 10:
         return 1
-    case .rg8Unorm:
+    case 30:
         return 2
-    case .rgba8Unorm, .rgba8Unorm_sRGB,
-         .bgra8Unorm, .bgra8Unorm_sRGB:
+    case 70, 71, 80, 81:
         return 4
-    case .r16Float:
+    case 110:
         return 2
-    case .rg16Float:
+    case 112:
         return 4
-    case .rgba16Float:
+    case 115:
         return 8
-    case .r32Float:
+    case 122:
         return 4
-    case .rg32Float:
+    case 123:
         return 8
-    case .rgba32Float:
+    case 124:
         return 16
-    case .depth16Unorm:
+    case 250:
         return 2
-    case .depth32Float:
+    case 252:
         return 4
-    case .stencil8:
+    case 253:
         return 1
-    case .depth24Unorm_stencil8:
+    case 255:
         return 4
-    case .depth32Float_stencil8:
+    case 260:
         return 8
     default:
         return nil
@@ -3298,7 +3312,7 @@ public final class Buffer {
             .copyMemory(from: source, byteCount: Int(length))
         if storageMode == .managed {
             native.didModifyRange(
-                NSRange(location: Int(offset), length: Int(length))
+                Int(offset)..<(Int(offset) + Int(length))
             )
         }
         return true
@@ -3355,7 +3369,7 @@ public final class Buffer {
             return false
         }
         native.didModifyRange(
-            NSRange(location: Int(offset), length: Int(length))
+            Int(offset)..<(Int(offset) + Int(length))
         )
         return true
     }
@@ -3558,6 +3572,8 @@ public final class Texture {
             return .cube
         case .typeCubeArray:
             return .cubeArray
+        case .typeTextureBuffer:
+            return .twoD
         @unknown default:
             return .twoD
         }
@@ -3783,10 +3799,12 @@ public final class Texture {
 public final class TextureView {
     fileprivate let native: MTLTexture
     private let usageStorage: UInt32
+    private var labelStorage: String
 
     fileprivate init(native: MTLTexture, usage: UInt32) {
         self.native = native
         self.usageStorage = usage
+        self.labelStorage = native.label ?? ""
     }
 
     public var pixelFormat: PixelFormat {
@@ -3806,8 +3824,8 @@ public final class TextureView {
     }
 
     public var label: String {
-        get { native.label ?? "" }
-        set { native.label = newValue.isEmpty ? nil : newValue }
+        get { labelStorage }
+        set { labelStorage = newValue }
     }
 
     public func nativeHandle() -> UnsafeMutableRawPointer {
@@ -3817,14 +3835,16 @@ public final class TextureView {
 
 public final class Sampler {
     fileprivate let native: MTLSamplerState
+    private var labelStorage: String
 
     fileprivate init(native: MTLSamplerState) {
         self.native = native
+        self.labelStorage = native.label ?? ""
     }
 
     public var label: String {
-        get { native.label ?? "" }
-        set { native.label = newValue.isEmpty ? nil : newValue }
+        get { labelStorage }
+        set { labelStorage = newValue }
     }
 
     public func nativeHandle() -> UnsafeMutableRawPointer {
@@ -4046,7 +4066,7 @@ public final class Heap {
             .fromOpaque(nativeHandle)
             .takeUnretainedValue()
         guard let texture = object as? MTLTexture,
-              texture.device.registryID == native.registryID else {
+              texture.device.registryID == native.device.registryID else {
             return nil
         }
         if !label.isEmpty {
@@ -4067,7 +4087,7 @@ public final class Heap {
             .fromOpaque(nativeHandle)
             .takeUnretainedValue()
         guard let buffer = object as? MTLBuffer,
-              buffer.device.registryID == native.registryID else {
+              buffer.device.registryID == native.device.registryID else {
             return nil
         }
         if !label.isEmpty {
@@ -4247,7 +4267,7 @@ public final class CommandBuffer {
             return nil
         }
         let passDescriptor = MTLComputePassDescriptor()
-        let attachment = passDescriptor.sampleBufferAttachments[0]
+        let attachment = requiredValue(passDescriptor.sampleBufferAttachments[0])
         attachment.sampleBuffer = counterSampleBuffer.native
         attachment.startOfEncoderSampleIndex =
             startOfEncoderSampleIndex == UInt32.max
@@ -4311,7 +4331,7 @@ public final class CommandBuffer {
             return nil
         }
         let passDescriptor = MTLBlitPassDescriptor()
-        let attachment = passDescriptor.sampleBufferAttachments[0]
+        let attachment = requiredValue(passDescriptor.sampleBufferAttachments[0])
         attachment.sampleBuffer = counterSampleBuffer.native
         attachment.startOfEncoderSampleIndex =
             startOfEncoderSampleIndex == UInt32.max
@@ -4385,7 +4405,7 @@ public final class CommandBuffer {
             return nil
         }
         let passDescriptor = MTLAccelerationStructurePassDescriptor()
-        let attachment = passDescriptor.sampleBufferAttachments[0]
+        let attachment = requiredValue(passDescriptor.sampleBufferAttachments[0])
         attachment.sampleBuffer = counterSampleBuffer.native
         attachment.startOfEncoderSampleIndex =
             startOfEncoderSampleIndex == UInt32.max
@@ -4712,7 +4732,7 @@ public final class BufferResourceSlot {
         guard queue.retireBuffer(currentBuffer, after: token) else {
             return false
         }
-        currentBuffer = nil
+        self.currentBuffer = nil
         versionStorage += 1
         return true
     }
@@ -4766,7 +4786,7 @@ public final class TextureResourceSlot {
         guard queue.retireTexture(currentTexture, after: token) else {
             return false
         }
-        currentTexture = nil
+        self.currentTexture = nil
         versionStorage += 1
         return true
     }
@@ -4844,9 +4864,12 @@ public final class RenderPassDescriptor {
     fileprivate init(texture: MTLTexture) {
         self.colorTexture = texture
         self.nativeDescriptor = MTLRenderPassDescriptor()
-        self.nativeDescriptor.colorAttachments[0].texture = texture
-        self.nativeDescriptor.colorAttachments[0].loadAction = .clear
-        self.nativeDescriptor.colorAttachments[0].storeAction = .store
+        requiredValue(self.nativeDescriptor.colorAttachments[0]).texture =
+            texture
+        requiredValue(self.nativeDescriptor.colorAttachments[0]).loadAction =
+            .clear
+        requiredValue(self.nativeDescriptor.colorAttachments[0]).storeAction =
+            .store
     }
 
     public convenience init(colorTexture: Texture) {
@@ -4862,7 +4885,9 @@ public final class RenderPassDescriptor {
                 "Color attachment index or format is invalid."
             return false
         }
-        let attachment = nativeDescriptor.colorAttachments[Int(index)]
+        let attachment = requiredValue(
+            nativeDescriptor.colorAttachments[Int(index)]
+        )
         attachment.texture = texture.native
         if index == 0 {
             colorTexture = texture.native
@@ -4880,7 +4905,8 @@ public final class RenderPassDescriptor {
                 "The primary color attachment cannot be cleared."
             return false
         }
-        nativeDescriptor.colorAttachments[Int(index)].texture = nil
+        requiredValue(nativeDescriptor.colorAttachments[Int(index)]).texture =
+            nil
         return true
     }
 
@@ -4891,7 +4917,8 @@ public final class RenderPassDescriptor {
         clearColor: ClearColor
     ) -> Bool {
         guard index < 8,
-              nativeDescriptor.colorAttachments[Int(index)].texture != nil,
+              requiredValue(nativeDescriptor.colorAttachments[Int(index)])
+                  .texture != nil,
               [
                   clearColor.red,
                   clearColor.green,
@@ -4902,7 +4929,9 @@ public final class RenderPassDescriptor {
                 "The color attachment configuration is invalid."
             return false
         }
-        let attachment = nativeDescriptor.colorAttachments[Int(index)]
+        let attachment = requiredValue(
+            nativeDescriptor.colorAttachments[Int(index)]
+        )
         attachment.loadAction = loadAction.metalLoadAction
         attachment.storeAction = storeAction.metalStoreAction
         attachment.clearColor = MTLClearColor(
@@ -4917,8 +4946,9 @@ public final class RenderPassDescriptor {
 
     public func colorFormat(at index: UInt32) -> PixelFormat? {
         guard index < 8,
-              let texture = nativeDescriptor.colorAttachments[Int(index)]
-                  .texture else {
+              let texture = requiredValue(
+                  nativeDescriptor.colorAttachments[Int(index)]
+              ).texture else {
             return nil
         }
         return PixelFormat(metalFormat: texture.pixelFormat)
@@ -4927,13 +4957,15 @@ public final class RenderPassDescriptor {
     public var colorAttachmentCount: UInt32 {
         UInt32(
             (0..<8).filter {
-                nativeDescriptor.colorAttachments[$0].texture != nil
+                requiredValue(nativeDescriptor.colorAttachments[$0]).texture
+                    != nil
             }.count
         )
     }
 
     public func setColorAttachment(_ target: RenderTarget) -> Bool {
-        guard target.nativeTexture.pixelFormat.isColorFormat,
+        guard PixelFormat(metalFormat: target.nativeTexture.pixelFormat)
+                  .isColorFormat,
               (
                   target.nativeResolveTexture == nil ||
                   target.nativeResolveTexture?.pixelFormat ==
@@ -4942,14 +4974,16 @@ public final class RenderPassDescriptor {
             return false
         }
         colorTexture = target.nativeTexture
-        nativeDescriptor.colorAttachments[0].texture = target.nativeTexture
-        nativeDescriptor.colorAttachments[0].resolveTexture =
+        requiredValue(nativeDescriptor.colorAttachments[0]).texture =
+            target.nativeTexture
+        requiredValue(nativeDescriptor.colorAttachments[0]).resolveTexture =
             target.nativeResolveTexture
         return true
     }
 
     public func setDepthAttachment(_ attachment: DepthAttachment) -> Bool {
-        guard attachment.nativeTexture.pixelFormat.isDepthFormat,
+        guard PixelFormat(metalFormat: attachment.nativeTexture.pixelFormat)
+                  .isDepthFormat,
               attachment.nativeTexture.sampleCount == sampleCount,
               attachment.clearDepth.isFinite,
               attachment.clearDepth >= 0,
@@ -4957,7 +4991,7 @@ public final class RenderPassDescriptor {
               attachment.storeAction != .multisampleResolve else {
             return false
         }
-        let depth = nativeDescriptor.depthAttachment
+        let depth = requiredValue(nativeDescriptor.depthAttachment)
         depth.texture = attachment.nativeTexture
         depth.loadAction = attachment.loadAction.metalLoadAction
         depth.storeAction = attachment.storeAction.metalStoreAction
@@ -4966,13 +5000,14 @@ public final class RenderPassDescriptor {
     }
 
     public func setStencilAttachment(_ attachment: DepthAttachment) -> Bool {
-        guard attachment.nativeTexture.pixelFormat.isStencilFormat,
+        guard PixelFormat(metalFormat: attachment.nativeTexture.pixelFormat)
+                  .isStencilFormat,
               attachment.nativeTexture.sampleCount == sampleCount,
               attachment.clearDepth.isFinite,
               attachment.storeAction != .multisampleResolve else {
             return false
         }
-        let stencil = nativeDescriptor.stencilAttachment
+        let stencil = requiredValue(nativeDescriptor.stencilAttachment)
         stencil.texture = attachment.nativeTexture
         stencil.loadAction = attachment.loadAction.metalLoadAction
         stencil.storeAction = attachment.storeAction.metalStoreAction
@@ -4981,11 +5016,11 @@ public final class RenderPassDescriptor {
     }
 
     public var hasDepthAttachment: Bool {
-        nativeDescriptor.depthAttachment.texture != nil
+        requiredValue(nativeDescriptor.depthAttachment).texture != nil
     }
 
     public var hasStencilAttachment: Bool {
-        nativeDescriptor.stencilAttachment.texture != nil
+        requiredValue(nativeDescriptor.stencilAttachment).texture != nil
     }
 
     public var colorFormat: PixelFormat {
@@ -5000,11 +5035,12 @@ public final class RenderPassDescriptor {
         get {
             RenderLoadAction(
                 metalLoadAction:
-                    nativeDescriptor.colorAttachments[0].loadAction
+                    requiredValue(nativeDescriptor.colorAttachments[0])
+                        .loadAction
             )
         }
         set {
-            nativeDescriptor.colorAttachments[0].loadAction =
+            requiredValue(nativeDescriptor.colorAttachments[0]).loadAction =
                 newValue.metalLoadAction
         }
     }
@@ -5013,18 +5049,21 @@ public final class RenderPassDescriptor {
         get {
             RenderStoreAction(
                 metalStoreAction:
-                    nativeDescriptor.colorAttachments[0].storeAction
+                    requiredValue(nativeDescriptor.colorAttachments[0])
+                        .storeAction
             )
         }
         set {
-            nativeDescriptor.colorAttachments[0].storeAction =
+            requiredValue(nativeDescriptor.colorAttachments[0]).storeAction =
                 newValue.metalStoreAction
         }
     }
 
     public var clearColor: ClearColor {
         get {
-            let value = nativeDescriptor.colorAttachments[0].clearColor
+            let value = requiredValue(
+                nativeDescriptor.colorAttachments[0]
+            ).clearColor
             return ClearColor(
                 red: value.red,
                 green: value.green,
@@ -5033,12 +5072,13 @@ public final class RenderPassDescriptor {
             )
         }
         set {
-            nativeDescriptor.colorAttachments[0].clearColor = MTLClearColor(
+            requiredValue(nativeDescriptor.colorAttachments[0]).clearColor =
+                MTLClearColor(
                 red: newValue.red,
                 green: newValue.green,
                 blue: newValue.blue,
                 alpha: newValue.alpha
-            )
+                )
         }
     }
 
@@ -5111,7 +5151,9 @@ public final class RenderPassDescriptor {
                 "A render-pass counter sample index is out of range."
             return false
         }
-        let attachment = nativeDescriptor.sampleBufferAttachments[0]
+        let attachment = requiredValue(
+            nativeDescriptor.sampleBufferAttachments[0]
+        )
         attachment.sampleBuffer = sampleBuffer.native
         attachment.startOfVertexSampleIndex =
             startOfVertexSampleIndex == UInt32.max
@@ -5135,7 +5177,8 @@ public final class RenderPassDescriptor {
     }
 
     public func clearCounterSampleBuffer() {
-        nativeDescriptor.sampleBufferAttachments[0].sampleBuffer = nil
+        requiredValue(nativeDescriptor.sampleBufferAttachments[0])
+            .sampleBuffer = nil
         counterSampleBufferStorage = nil
     }
 
@@ -5146,7 +5189,8 @@ public final class RenderPassDescriptor {
     public func validate() -> Bool {
         validationErrorStorage = ""
 
-        guard nativeDescriptor.colorAttachments[0].texture != nil else {
+        guard requiredValue(nativeDescriptor.colorAttachments[0]).texture != nil
+        else {
             validationErrorStorage = "A color attachment texture is required."
             return false
         }
@@ -5157,10 +5201,13 @@ public final class RenderPassDescriptor {
 
         for index in 1..<8 {
             guard let texture =
-                    nativeDescriptor.colorAttachments[index].texture else {
+                    requiredValue(nativeDescriptor.colorAttachments[index])
+                        .texture else {
                 continue
             }
-            let attachment = nativeDescriptor.colorAttachments[index]
+            let attachment = requiredValue(
+                nativeDescriptor.colorAttachments[index]
+            )
             let format = PixelFormat(metalFormat: texture.pixelFormat)
             guard format.isColorFormat,
                   texture.sampleCount == sampleCount,
@@ -5171,12 +5218,13 @@ public final class RenderPassDescriptor {
             }
             if attachment.loadAction == .clear {
                 let clear = attachment.clearColor
-                guard [
+                let clearValues: [Double] = [
                     clear.red,
                     clear.green,
                     clear.blue,
                     clear.alpha
-                ].allSatisfy({ $0.isFinite }) else {
+                ]
+                guard clearValues.allSatisfy({ $0.isFinite }) else {
                     validationErrorStorage =
                         "An additional color clear value is invalid."
                     return false
@@ -5210,7 +5258,8 @@ public final class RenderPassDescriptor {
                 return false
             }
             guard let resolveTexture =
-                    nativeDescriptor.colorAttachments[0].resolveTexture,
+                    requiredValue(nativeDescriptor.colorAttachments[0])
+                        .resolveTexture,
                   resolveTexture.sampleCount == 1,
                   resolveTexture.pixelFormat == colorTexture.pixelFormat
             else {
@@ -5219,21 +5268,24 @@ public final class RenderPassDescriptor {
                     + "attachment."
                 return false
             }
-        } else if nativeDescriptor.colorAttachments[0].resolveTexture != nil {
+        } else if requiredValue(nativeDescriptor.colorAttachments[0])
+            .resolveTexture != nil {
             validationErrorStorage =
                 "A resolve texture requires a multisample resolve store action."
             return false
         }
 
-        if let depthTexture = nativeDescriptor.depthAttachment.texture {
+        if let depthTexture = requiredValue(nativeDescriptor.depthAttachment)
+            .texture {
             let depthFormat = PixelFormat(metalFormat: depthTexture.pixelFormat)
             guard depthFormat.isDepthFormat,
                   depthTexture.sampleCount == sampleCount,
-                  nativeDescriptor.depthAttachment.storeAction !=
+                  requiredValue(nativeDescriptor.depthAttachment).storeAction !=
                     .multisampleResolve,
-                  nativeDescriptor.depthAttachment.clearDepth.isFinite,
-                  nativeDescriptor.depthAttachment.clearDepth >= 0,
-                  nativeDescriptor.depthAttachment.clearDepth <= 1
+                  requiredValue(nativeDescriptor.depthAttachment)
+                      .clearDepth.isFinite,
+                  requiredValue(nativeDescriptor.depthAttachment).clearDepth >= 0,
+                  requiredValue(nativeDescriptor.depthAttachment).clearDepth <= 1
             else {
                 validationErrorStorage =
                     "Depth attachment format or sample count is invalid."
@@ -5241,13 +5293,15 @@ public final class RenderPassDescriptor {
             }
         }
 
-        if let stencilTexture = nativeDescriptor.stencilAttachment.texture {
+        if let stencilTexture = requiredValue(nativeDescriptor.stencilAttachment)
+            .texture {
             let stencilFormat = PixelFormat(
                 metalFormat: stencilTexture.pixelFormat
             )
             guard stencilFormat.isStencilFormat,
                   stencilTexture.sampleCount == sampleCount,
-                  nativeDescriptor.stencilAttachment.storeAction !=
+                  requiredValue(nativeDescriptor.stencilAttachment)
+                      .storeAction !=
                     .multisampleResolve
             else {
                 validationErrorStorage =
@@ -5262,7 +5316,9 @@ public final class RenderPassDescriptor {
             return false
         }
 
-        let colorAttachment = nativeDescriptor.colorAttachments[0]
+        let colorAttachment = requiredValue(
+            nativeDescriptor.colorAttachments[0]
+        )
         if colorTexture.storageMode == .memoryless {
             guard colorAttachment.loadAction != .load,
                   colorAttachment.storeAction != .store else {
@@ -5282,11 +5338,14 @@ public final class RenderPassDescriptor {
             }
         }
 
-        if let depthTexture = nativeDescriptor.depthAttachment.texture,
+        if let depthTexture = requiredValue(nativeDescriptor.depthAttachment)
+            .texture,
            depthTexture.storageMode == .memoryless {
-            guard nativeDescriptor.depthAttachment.loadAction != .load,
-                  nativeDescriptor.depthAttachment.storeAction != .store,
-                  nativeDescriptor.depthAttachment.storeAction
+            guard requiredValue(nativeDescriptor.depthAttachment).loadAction
+                    != .load,
+                  requiredValue(nativeDescriptor.depthAttachment).storeAction
+                    != .store,
+                  requiredValue(nativeDescriptor.depthAttachment).storeAction
                     != .multisampleResolve else {
                 validationErrorStorage =
                     "Memoryless depth attachments cannot be loaded or "
@@ -5295,11 +5354,14 @@ public final class RenderPassDescriptor {
             }
         }
 
-        if let stencilTexture = nativeDescriptor.stencilAttachment.texture,
+        if let stencilTexture = requiredValue(nativeDescriptor.stencilAttachment)
+            .texture,
            stencilTexture.storageMode == .memoryless {
-            guard nativeDescriptor.stencilAttachment.loadAction != .load,
-                  nativeDescriptor.stencilAttachment.storeAction != .store,
-                  nativeDescriptor.stencilAttachment.storeAction
+            guard requiredValue(nativeDescriptor.stencilAttachment).loadAction
+                    != .load,
+                  requiredValue(nativeDescriptor.stencilAttachment).storeAction
+                    != .store,
+                  requiredValue(nativeDescriptor.stencilAttachment).storeAction
                     != .multisampleResolve else {
                 validationErrorStorage =
                     "Memoryless stencil attachments cannot be loaded or "
@@ -5366,7 +5428,11 @@ public final class RenderEncoder {
         guard !ended else {
             return false
         }
-        native.useResource(buffer.native, usage: usage.metalUsage)
+        native.useResource(
+            buffer.native,
+            usage: usage.metalUsage,
+            stages: [.vertex, .fragment, .tile, .object, .mesh]
+        )
         return true
     }
 
@@ -5374,7 +5440,11 @@ public final class RenderEncoder {
         guard !ended else {
             return false
         }
-        native.useResource(texture.native, usage: usage.metalUsage)
+        native.useResource(
+            texture.native,
+            usage: usage.metalUsage,
+            stages: [.vertex, .fragment, .tile, .object, .mesh]
+        )
         return true
     }
 
@@ -5485,10 +5555,10 @@ public final class RenderEncoder {
         }
         native.drawIndexedPrimitives(
             type: primitiveType.metalPrimitiveType,
+            indexCount: Int(indexCount),
             indexType: indexType.metalIndexType,
             indexBuffer: indexBuffer.native,
             indexBufferOffset: Int(indexBufferOffset),
-            indexCount: Int(indexCount),
             instanceCount: Int(instanceCount),
             baseVertex: Int(baseVertex),
             baseInstance: Int(baseInstance)
@@ -5558,7 +5628,7 @@ public final class RenderEncoder {
         guard !ended else {
             return false
         }
-        native.setTileRenderPipelineState(pipeline.native)
+        native.setRenderPipelineState(pipeline.native)
         return true
     }
 
@@ -5661,10 +5731,7 @@ public final class RenderEncoder {
         }
         native.executeCommandsInBuffer(
             commands.native,
-            with: NSRange(
-                location: Int(rangeStart),
-                length: Int(count)
-            )
+            range: Int(rangeStart)..<(Int(rangeStart) + Int(count))
         )
         return true
     }
@@ -5771,7 +5838,7 @@ public final class RenderEncoder {
         guard !ended else {
             return false
         }
-        native.updateFence(fence.native)
+        native.updateFence(fence.native, after: .fragment)
         return true
     }
 
@@ -5779,7 +5846,7 @@ public final class RenderEncoder {
         guard !ended else {
             return false
         }
-        native.waitForFence(fence.native)
+        native.waitForFence(fence.native, before: .vertex)
         return true
     }
 
@@ -6022,10 +6089,7 @@ public final class ComputeEncoder {
         }
         native.executeCommandsInBuffer(
             commands.native,
-            with: NSRange(
-                location: Int(rangeStart),
-                length: Int(count)
-            )
+            range: Int(rangeStart)..<(Int(rangeStart) + Int(count))
         )
         return true
     }
@@ -6259,7 +6323,7 @@ public final class BlitEncoder {
         )
         guard !ended,
               let byteCount = textureTransferByteCount(
-                  destination,
+                  destination.native,
                   descriptor: transfer
               ),
               source.validateRange(
@@ -6305,7 +6369,7 @@ public final class BlitEncoder {
         )
         guard !ended,
               let byteCount = textureTransferByteCount(
-                  source,
+                  source.native,
                   descriptor: transfer
               ),
               destination.validateRange(
@@ -6377,11 +6441,15 @@ public final class BlitEncoder {
     }
 
     public func synchronize(_ buffer: Buffer) -> Bool {
+#if arch(arm64)
+        return false
+#else
         guard !ended, buffer.storageMode == .managed else {
             return false
         }
         native.synchronize(resource: buffer.native)
         return true
+#endif
     }
 
     public func synchronize(
@@ -6397,20 +6465,28 @@ public final class BlitEncoder {
                 range: BufferRange(offset: 0, length: buffer.length)
             )
         case .gpuToCPU:
+#if arch(arm64)
+            return false
+#else
             guard buffer.storageMode == .managed else {
                 return false
             }
             native.synchronize(resource: buffer.native)
             return true
+#endif
         }
     }
 
     public func synchronize(_ texture: Texture) -> Bool {
+#if arch(arm64)
+        return false
+#else
         guard !ended, texture.storageMode == .managed else {
             return false
         }
         native.synchronize(resource: texture.native)
         return true
+#endif
     }
 
     public func synchronize(
@@ -6427,11 +6503,15 @@ public final class BlitEncoder {
             }
             return true
         case .gpuToCPU:
+#if arch(arm64)
+            return false
+#else
             guard texture.storageMode == .managed else {
                 return false
             }
             native.synchronize(resource: texture.native)
             return true
+#endif
         }
     }
 
@@ -7009,7 +7089,7 @@ public final class Surface {
             mipmapped: false
         )
         descriptor.usage = [.renderTarget]
-        descriptor.storageMode = .gpuPrivate
+        descriptor.storageMode = .private
         return device.makeTexture(descriptor: descriptor)
     }
 }
@@ -7242,26 +7322,54 @@ public final class ParameterBlock {
     }
 
     public func setUInt32(_ offset: UInt32, value: UInt32) -> Bool {
-        withUnsafeBytes(of: value) {
-            writeBytes($0, length: UInt32(MemoryLayout<UInt32>.size), offset: offset)
+        Swift.withUnsafeBytes(of: value) { bytes in
+            guard let baseAddress = bytes.baseAddress else {
+                return false
+            }
+            return writeBytes(
+                baseAddress,
+                length: UInt32(MemoryLayout<UInt32>.size),
+                offset: offset
+            )
         }
     }
 
     public func setInt32(_ offset: UInt32, value: Int32) -> Bool {
-        withUnsafeBytes(of: value) {
-            writeBytes($0, length: UInt32(MemoryLayout<Int32>.size), offset: offset)
+        Swift.withUnsafeBytes(of: value) { bytes in
+            guard let baseAddress = bytes.baseAddress else {
+                return false
+            }
+            return writeBytes(
+                baseAddress,
+                length: UInt32(MemoryLayout<Int32>.size),
+                offset: offset
+            )
         }
     }
 
     public func setFloat(_ offset: UInt32, value: Float) -> Bool {
-        withUnsafeBytes(of: value) {
-            writeBytes($0, length: UInt32(MemoryLayout<Float>.size), offset: offset)
+        Swift.withUnsafeBytes(of: value) { bytes in
+            guard let baseAddress = bytes.baseAddress else {
+                return false
+            }
+            return writeBytes(
+                baseAddress,
+                length: UInt32(MemoryLayout<Float>.size),
+                offset: offset
+            )
         }
     }
 
     public func setDouble(_ offset: UInt32, value: Double) -> Bool {
-        withUnsafeBytes(of: value) {
-            writeBytes($0, length: UInt32(MemoryLayout<Double>.size), offset: offset)
+        Swift.withUnsafeBytes(of: value) { bytes in
+            guard let baseAddress = bytes.baseAddress else {
+                return false
+            }
+            return writeBytes(
+                baseAddress,
+                length: UInt32(MemoryLayout<Double>.size),
+                offset: offset
+            )
         }
     }
 
@@ -7650,19 +7758,11 @@ public final class IndirectRenderCommand {
     }
 
     public func setVertexTexture(_ texture: Texture, index: UInt32) -> Bool {
-        guard UInt64(index) <= UInt64(Int.max) else {
-            return false
-        }
-        native.setVertexTexture(texture.native, at: Int(index))
-        return true
+        false
     }
 
     public func setFragmentTexture(_ texture: Texture, index: UInt32) -> Bool {
-        guard UInt64(index) <= UInt64(Int.max) else {
-            return false
-        }
-        native.setFragmentTexture(texture.native, at: Int(index))
-        return true
+        false
     }
 
     public func drawPrimitives(
@@ -7681,7 +7781,7 @@ public final class IndirectRenderCommand {
             return false
         }
         native.drawPrimitives(
-            primitiveType: primitiveType.metalPrimitiveType,
+            primitiveType.metalPrimitiveType,
             vertexStart: Int(vertexStart),
             vertexCount: Int(vertexCount),
             instanceCount: Int(instanceCount),
@@ -7691,6 +7791,7 @@ public final class IndirectRenderCommand {
     }
 
     public func drawIndexedPrimitives(
+        primitiveType: PrimitiveType = .triangle,
         indexType: IndexType,
         indexBuffer: Buffer,
         indexBufferOffset: UInt64,
@@ -7714,10 +7815,11 @@ public final class IndirectRenderCommand {
             return false
         }
         native.drawIndexedPrimitives(
+            primitiveType.metalPrimitiveType,
+            indexCount: Int(indexCount),
             indexType: indexType.metalIndexType,
             indexBuffer: indexBuffer.native,
             indexBufferOffset: Int(indexBufferOffset),
-            indexCount: Int(indexCount),
             instanceCount: Int(instanceCount),
             baseVertex: Int(baseVertex),
             baseInstance: Int(baseInstance)
@@ -7760,19 +7862,11 @@ public final class IndirectComputeCommand {
     }
 
     public func setTexture(_ texture: Texture, index: UInt32) -> Bool {
-        guard UInt64(index) <= UInt64(Int.max) else {
-            return false
-        }
-        native.setKernelTexture(texture.native, at: Int(index))
-        return true
+        false
     }
 
     public func setSampler(_ sampler: Sampler, index: UInt32) -> Bool {
-        guard UInt64(index) <= UInt64(Int.max) else {
-            return false
-        }
-        native.setKernelSamplerState(sampler.native, at: Int(index))
-        return true
+        false
     }
 
     public func dispatchThreadgroups(
@@ -7822,10 +7916,7 @@ public final class IndirectCommandBuffer {
             return false
         }
         native.reset(
-            with: NSRange(
-                location: Int(rangeStart),
-                length: Int(count)
-            )
+            Int(rangeStart)..<(Int(rangeStart) + Int(count))
         )
         return true
     }
@@ -7946,7 +8037,7 @@ public final class ShaderLibrary {
                     + "\(ObjectIdentifier(function as AnyObject).hashValue)"
             )
         } catch {
-            errorDescriptionStorage = errorDescription(for: error)
+            errorDescriptionStorage = Self.errorDescription(for: error)
             return nil
         }
     }
@@ -8053,17 +8144,17 @@ public final class PipelineReflection {
     ) {
         var resources: [PipelineResourceInfo] = []
         if let renderReflection {
-            for argument in renderReflection.vertexArguments {
+            for binding in renderReflection.vertexBindings {
                 if let info = resourceInfo(
-                    from: argument,
+                    from: binding,
                     stages: UInt32(ShaderStage.vertex.rawValue)
                 ) {
                     resources.append(info)
                 }
             }
-            for argument in renderReflection.fragmentArguments {
+            for binding in renderReflection.fragmentBindings {
                 if let info = resourceInfo(
-                    from: argument,
+                    from: binding,
                     stages: UInt32(ShaderStage.fragment.rawValue)
                 ) {
                     resources.append(info)
@@ -8078,9 +8169,9 @@ public final class PipelineReflection {
     ) {
         var resources: [PipelineResourceInfo] = []
         if let computeReflection {
-            for argument in computeReflection.arguments {
+            for binding in computeReflection.bindings {
                 if let info = resourceInfo(
-                    from: argument,
+                    from: binding,
                     stages: UInt32(ShaderStage.compute.rawValue)
                 ) {
                     resources.append(info)
@@ -8154,25 +8245,33 @@ public final class PipelineReflection {
     }
 }
 
-fileprivate func bindingKind(for argument: MTLArgument) -> BindingKind {
-    switch argument.type {
+fileprivate func bindingKind(for binding: any MTLBinding) -> BindingKind {
+    switch binding.type {
     case .buffer:
-        return argument.isArgumentBuffer ? .argumentBuffer : .buffer
+        return binding.isArgument ? .argumentBuffer : .buffer
     case .texture:
         return .texture
     case .sampler:
         return .sampler
     case .threadgroupMemory:
         return .threadgroupMemory
-    case .imageblock:
+    case .imageblock, .imageblockData:
         return .bytes
+    case .tensor:
+        return .unknown
+    case .visibleFunctionTable,
+         .primitiveAccelerationStructure,
+         .instanceAccelerationStructure,
+         .intersectionFunctionTable,
+         .objectPayload:
+        return .unknown
     @unknown default:
         return .unknown
     }
 }
 
-fileprivate func resourceAccess(for argument: MTLArgument) -> ResourceAccess {
-    switch argument.access {
+fileprivate func resourceAccess(for binding: any MTLBinding) -> ResourceAccess {
+    switch binding.access {
     case .readOnly:
         return .read
     case .writeOnly:
@@ -8185,21 +8284,36 @@ fileprivate func resourceAccess(for argument: MTLArgument) -> ResourceAccess {
 }
 
 fileprivate func resourceInfo(
-    from argument: MTLArgument,
+    from binding: any MTLBinding,
     stages: UInt32
 ) -> PipelineResourceInfo? {
-    guard argument.isActive else {
+    guard binding.isUsed else {
         return nil
     }
+    let arrayLength: UInt32
+    var dataSize = 0
+    var alignment = 0
+    if let bufferBinding = binding as? any MTLBufferBinding {
+        dataSize = bufferBinding.bufferDataSize
+        alignment = bufferBinding.bufferAlignment
+    } else if let threadgroupBinding = binding as? any MTLThreadgroupBinding {
+        dataSize = threadgroupBinding.threadgroupMemoryDataSize
+        alignment = threadgroupBinding.threadgroupMemoryAlignment
+    }
+    if let textureBinding = binding as? any MTLTextureBinding {
+        arrayLength = UInt32(max(1, textureBinding.arrayLength))
+    } else {
+        arrayLength = 1
+    }
     return PipelineResourceInfo(
-        name: argument.name,
-        kind: bindingKind(for: argument),
+        name: binding.name,
+        kind: bindingKind(for: binding),
         stages: stages,
-        index: UInt32(argument.index),
-        arrayLength: UInt32(max(1, argument.arrayLength)),
-        dataSize: UInt32(max(0, argument.bufferDataSize)),
-        alignment: UInt32(max(0, argument.bufferAlignment)),
-        access: resourceAccess(for: argument)
+        index: UInt32(binding.index),
+        arrayLength: arrayLength,
+        dataSize: UInt32(max(0, dataSize)),
+        alignment: UInt32(max(0, alignment)),
+        access: resourceAccess(for: binding)
     )
 }
 
@@ -8723,13 +8837,17 @@ public final class RenderPipelineDescriptor {
         if !vertexAttributeStorage.isEmpty || !vertexLayoutStorage.isEmpty {
             let vertexDescriptor = MTLVertexDescriptor()
             for (index, attribute) in vertexAttributeStorage {
-                let metalAttribute = vertexDescriptor.attributes[Int(index)]
+                let metalAttribute = requiredValue(
+                    vertexDescriptor.attributes[Int(index)]
+                )
                 metalAttribute.format = attribute.format.metalFormat
                 metalAttribute.offset = Int(attribute.offset)
                 metalAttribute.bufferIndex = Int(attribute.bufferIndex)
             }
             for (index, layout) in vertexLayoutStorage {
-                let metalLayout = vertexDescriptor.layouts[Int(index)]
+                let metalLayout = requiredValue(
+                    vertexDescriptor.layouts[Int(index)]
+                )
                 metalLayout.stride = Int(layout.stride)
                 metalLayout.stepFunction = layout.stepFunction.metalFunction
                 metalLayout.stepRate = Int(layout.stepRate)
@@ -8741,7 +8859,7 @@ public final class RenderPipelineDescriptor {
             guard let color = colorAttachmentStorage[index].descriptor else {
                 continue
             }
-            let attachment = descriptor.colorAttachments[index]
+            let attachment = requiredValue(descriptor.colorAttachments[index])
             attachment.pixelFormat = color.pixelFormat.metalFormat
             attachment.isBlendingEnabled = color.blendingEnabled
             attachment.sourceRGBBlendFactor =
@@ -8826,7 +8944,7 @@ public final class RenderPipelineDescriptor {
             guard let color = colorAttachmentStorage[index].descriptor else {
                 continue
             }
-            let attachment = descriptor.colorAttachments[index]
+            let attachment = requiredValue(descriptor.colorAttachments[index])
             attachment.pixelFormat = color.pixelFormat.metalFormat
             attachment.isBlendingEnabled = color.blendingEnabled
             attachment.sourceRGBBlendFactor =
@@ -9080,16 +9198,12 @@ public final class RenderPipeline {
         self.cullMode = cullMode
         self.frontFacingWinding = frontFacingWinding
         self.labelStorage = label
-        if !label.isEmpty {
-            native.label = label
-        }
     }
 
     public var label: String {
         get { labelStorage }
         set {
             labelStorage = newValue
-            native.label = newValue.isEmpty ? nil : newValue
         }
     }
 
@@ -9114,9 +9228,6 @@ public final class ComputePipeline {
         self.reflection = reflection
         self.supportsRayTracingStorage = supportsRayTracing
         self.labelStorage = label
-        if !label.isEmpty {
-            native.label = label
-        }
     }
 
     public var threadExecutionWidth: UInt32 {
@@ -9135,7 +9246,6 @@ public final class ComputePipeline {
         get { labelStorage }
         set {
             labelStorage = newValue
-            native.label = newValue.isEmpty ? nil : newValue
         }
     }
 
@@ -9217,10 +9327,7 @@ public final class IntersectionFunctionTable {
         }
         native.setFunctions(
             handles,
-            range: NSRange(
-                location: Int(rangeStart),
-                length: functions.count
-            )
+            range: Int(rangeStart)..<(Int(rangeStart) + functions.count)
         )
         return true
     }
@@ -9263,10 +9370,7 @@ public final class IntersectionFunctionTable {
         native.setBuffers(
             buffers.map(\.native),
             offsets: offsets.map { Int($0) },
-            range: NSRange(
-                location: Int(rangeStart),
-                length: buffers.count
-            )
+            range: Int(rangeStart)..<(Int(rangeStart) + buffers.count)
         )
         return true
     }
@@ -9513,7 +9617,9 @@ public final class TilePipelineDescriptor {
     fileprivate func makeMetalDescriptor()
         -> MTLTileRenderPipelineDescriptor {
         let descriptor = MTLTileRenderPipelineDescriptor()
-        descriptor.tileFunction = tileFunctionStorage?.native
+        if let tileFunction = tileFunctionStorage {
+            descriptor.tileFunction = tileFunction.native
+        }
         descriptor.rasterSampleCount = Int(sampleCount)
         descriptor.threadgroupSizeMatchesTileSize =
             threadgroupSizeMatchesTileSize
@@ -9525,7 +9631,7 @@ public final class TilePipelineDescriptor {
             guard pixelFormat != .invalid else {
                 continue
             }
-            descriptor.colorAttachments[index].pixelFormat =
+            requiredValue(descriptor.colorAttachments[index]).pixelFormat =
                 pixelFormat.metalFormat
         }
         return descriptor
@@ -9539,13 +9645,10 @@ public final class TilePipeline {
     fileprivate init(native: MTLRenderPipelineState, label: String) {
         self.native = native
         self.labelStorage = label
-        if !label.isEmpty {
-            native.label = label
-        }
     }
 
     public var threadExecutionWidth: UInt32 {
-        UInt32(native.threadExecutionWidth)
+        0
     }
 
     public var maxThreadsPerThreadgroup: UInt32 {
@@ -9553,14 +9656,13 @@ public final class TilePipeline {
     }
 
     public var imageblockMemoryLength: UInt32 {
-        UInt32(native.imageblockMemoryLength)
+        UInt32(native.imageblockSampleLength)
     }
 
     public var label: String {
         get { labelStorage }
         set {
             labelStorage = newValue
-            native.label = newValue.isEmpty ? nil : newValue
         }
     }
 
@@ -9964,7 +10066,7 @@ public final class Device {
                 }
                 let result = try native.makeRenderPipelineState(
                     descriptor: metalDescriptor,
-                    options: .argumentInfo
+                    options: .bindingInfo
                 )
                 state = result.0
                 nativeReflection = result.1
@@ -9975,7 +10077,7 @@ public final class Device {
                 )
                 state = try native.makeRenderPipelineState(
                     descriptor: metalDescriptor,
-                    options: .argumentInfo,
+                    options: .bindingInfo,
                     reflection: &nativeReflection
                 )
             }
@@ -9991,9 +10093,17 @@ public final class Device {
                 maxThreadsPerThreadgroup:
                     boundedUInt32(state.maxTotalThreadsPerThreadgroup),
                 imageblockMemoryLength:
-                    boundedUInt32(state.imageblockMemoryLength),
+                    boundedUInt32(
+                        state.imageblockMemoryLength(
+                            forDimensions: MTLSize(
+                                width: 1,
+                                height: 1,
+                                depth: 1
+                            )
+                        )
+                    ),
                 supportsIndirectCommandBuffers:
-                    state.supportsIndirectCommandBuffers,
+                    descriptor.supportsIndirectCommandBuffers,
                 sampleCount: descriptor.sampleCount,
                 label: descriptor.label
             )
@@ -10077,7 +10187,7 @@ public final class Device {
         do {
             let state = try native.makeComputePipelineState(
                 descriptor: metalDescriptor,
-                options: .argumentInfo,
+                options: .bindingInfo,
                 reflection: &nativeReflection
             )
             let reflection = PipelineReflection(
@@ -10157,7 +10267,7 @@ public final class Device {
         do {
             let state = try native.makeRenderPipelineState(
                 tileDescriptor: descriptor.makeMetalDescriptor(),
-                options: .argumentInfo,
+                options: .bindingInfo,
                 reflection: &reflection
             )
             errorDescriptionStorage = ""
@@ -10791,23 +10901,37 @@ public final class Device {
     }
 
     private static func makeDeviceInfo(_ device: MTLDevice) -> DeviceInfo {
+        let lowPower: Bool
+        let removable: Bool
         let type: DeviceType
+#if arch(arm64)
         if device.hasUnifiedMemory {
             type = .unified
-        } else if device.isRemovable {
+        } else {
+            type = .discrete
+        }
+        lowPower = false
+        removable = false
+#else
+        lowPower = device.isLowPower
+        removable = device.isRemovable
+        if device.hasUnifiedMemory {
+            type = .unified
+        } else if removable {
             type = .external
-        } else if device.isLowPower {
+        } else if lowPower {
             type = .integrated
         } else {
             type = .discrete
         }
+#endif
 
         return DeviceInfo(
             name: device.name,
             registryID: device.registryID,
             type: type,
-            lowPower: device.isLowPower,
-            removable: device.isRemovable,
+            lowPower: lowPower,
+            removable: removable,
             recommendedMaxWorkingSetSize: device.recommendedMaxWorkingSetSize
         )
     }
@@ -10815,14 +10939,8 @@ public final class Device {
     private static func makeCapabilities(
         _ device: MTLDevice
     ) -> DeviceCapabilities {
-        let macFamily: MetalFamily
-        if device.supportsFamily(.mac2) {
-            macFamily = .mac2
-        } else if device.supportsFamily(.mac1) {
-            macFamily = .mac1
-        } else {
-            macFamily = .unknown
-        }
+        let hasMacFamily = device.supportsFamily(.apple7)
+        let macFamily: MetalFamily = hasMacFamily ? .mac2 : .unknown
 
         let appleFamily: MetalFamily
         if device.supportsFamily(.apple7) {
@@ -10863,13 +10981,11 @@ public final class Device {
         }
         let operatingSystemVersion =
             ProcessInfo.processInfo.operatingSystemVersion
-        let hasMacFamily = macFamily != .unknown
         let hasAppleFamily = appleFamily != .unknown
-        let supportsMeshShaders =
-            device.supportsFamily(.mac2) || device.supportsFamily(.apple7)
-        let supportsTileShaders = hasAppleFamily || macFamily == .mac2
+        let supportsMeshShaders = hasMacFamily
+        let supportsTileShaders = hasAppleFamily || hasMacFamily
         let supportsMemorylessAttachments =
-            hasAppleFamily || macFamily == .mac2
+            hasAppleFamily || hasMacFamily
         let supportsIndirectCommandBuffers = hasMacFamily || hasAppleFamily
 
         return DeviceCapabilities(
@@ -10903,14 +11019,13 @@ public final class Device {
             supportedSampleCounts: sampleCounts,
             maxTextureDimension2DLimit: .unknown,
             simdGroups: hasMacFamily || hasAppleFamily,
-            simdGroupMatrix: device.supportsFamily(.apple7)
-                || device.supportsFamily(.mac2),
-            fragmentAtomics: device.supportsFamily(.mac2)
+            simdGroupMatrix: hasMacFamily,
+            fragmentAtomics: hasMacFamily
                 || device.supportsFamily(.apple3),
             rayTracingMotion: device.supportsRaytracing
                 && (
                     device.supportsFamily(.apple6)
-                        || device.supportsFamily(.mac2)
+                        || hasMacFamily
                 ),
             operatingSystemMajor: UInt32(
                 min(operatingSystemVersion.majorVersion, Int(UInt32.max))
@@ -10992,11 +11107,12 @@ public final class OffscreenValidationFixture {
             }
 
             var bytes = [UInt8](repeating: 0, count: 2 * 2 * 4)
+            let byteCount = bytes.count
             let didRead = bytes.withUnsafeMutableBytes { rawBytes in
                 texture.readBaseLevel2D(
                     destination: rawBytes.baseAddress!,
                     bytesPerRow: 2 * 4,
-                    bytesPerImage: UInt64(bytes.count)
+                    bytesPerImage: UInt64(byteCount)
                 )
             }
             guard didRead else {

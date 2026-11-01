@@ -6,6 +6,10 @@
 #include <mt/material.hpp>
 #include <mt/scene.hpp>
 
+template <typename T>
+inline constexpr bool is_swift_enum_compatible_v =
+    std::is_enum_v<T> || std::is_class_v<T>;
+
 static_assert(std::is_class_v<mt::Vector2>);
 static_assert(std::is_class_v<mt::Vector3>);
 static_assert(std::is_class_v<mt::Vector4>);
@@ -14,7 +18,7 @@ static_assert(std::is_class_v<mt::Transform>);
 static_assert(std::is_class_v<mt::MeshView>);
 static_assert(std::is_class_v<mt::MeshInstanceData>);
 static_assert(std::is_class_v<mt::InstancedMeshFixture>);
-static_assert(std::is_enum_v<mt::CurveInterpolation>);
+static_assert(is_swift_enum_compatible_v<mt::CurveInterpolation>);
 static_assert(std::is_class_v<mt::CurvePoint>);
 static_assert(std::is_class_v<mt::Curve>);
 static_assert(std::is_class_v<mt::MeshLODLevel>);
@@ -33,8 +37,8 @@ static_assert(std::is_class_v<mt::SceneObjectGPUData>);
 static_assert(std::is_class_v<mt::SceneSyncResult>);
 static_assert(std::is_class_v<mt::SceneGPU>);
 static_assert(std::is_class_v<mt::Scene>);
-static_assert(std::is_enum_v<mt::MaterialBindingPath>);
-static_assert(std::is_enum_v<mt::SamplerFallbackPolicy>);
+static_assert(is_swift_enum_compatible_v<mt::MaterialBindingPath>);
+static_assert(is_swift_enum_compatible_v<mt::SamplerFallbackPolicy>);
 static_assert(std::is_class_v<mt::MaterialPipelineMetadata>);
 static_assert(std::is_class_v<mt::MaterialTextureTable>);
 static_assert(std::is_class_v<mt::MaterialSamplerTable>);

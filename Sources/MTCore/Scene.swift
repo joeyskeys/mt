@@ -3409,7 +3409,6 @@ public struct BuiltInShaderLayout {
     public static func fixedColor() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .fixedColor,
-            sourceName: "fixed_color.metal",
             vertexEntryPoint: "mt_fixed_color_vertex",
             fragmentEntryPoint: "mt_fixed_color_fragment",
             computeEntryPoint: "",
@@ -3419,6 +3418,7 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 3,
             requiredFeatures: 0,
+            sourceName: "fixed_color.metal",
             indexedVertexEntryPoint: "mt_fixed_color_vertex",
             indexedFragmentEntryPoint: "mt_fixed_color_fragment",
             cpuDataSize: UInt32(MemoryLayout<FixedColorMaterialData>.size),
@@ -3429,7 +3429,6 @@ public struct BuiltInShaderLayout {
     public static func phong() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .phong,
-            sourceName: "phong.metal",
             vertexEntryPoint: "mt_phong_vertex",
             fragmentEntryPoint: "mt_phong_fragment",
             computeEntryPoint: "",
@@ -3439,6 +3438,7 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 3,
             requiredFeatures: 0,
+            sourceName: "phong.metal",
             indexedVertexEntryPoint: "mt_phong_vertex",
             indexedFragmentEntryPoint: "mt_phong_fragment",
             cpuDataSize: UInt32(MemoryLayout<PhongMaterialData>.size),
@@ -3449,7 +3449,6 @@ public struct BuiltInShaderLayout {
     public static func forwardPlus() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .forwardPlus,
-            sourceName: "forward_plus.metal",
             vertexEntryPoint: "mt_forward_plus_vertex",
             fragmentEntryPoint: "mt_forward_plus_fragment",
             computeEntryPoint: "",
@@ -3459,19 +3458,19 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 3,
             requiredFeatures: 0,
-            auxiliaryBufferIndex0: 4,
-            auxiliaryBufferIndex1: 5,
+            sourceName: "forward_plus.metal",
             indexedVertexEntryPoint: "mt_forward_plus_vertex",
             indexedFragmentEntryPoint: "mt_forward_plus_fragment",
             cpuDataSize: UInt32(MemoryLayout<PhongMaterialData>.size),
-            mslDataSize: 48
+            mslDataSize: 48,
+            auxiliaryBufferIndex0: 4,
+            auxiliaryBufferIndex1: 5
         )
     }
 
     public static func physicallyBased() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .physicallyBased,
-            sourceName: "physically_based.metal",
             vertexEntryPoint: "mt_pbr_vertex",
             fragmentEntryPoint: "mt_pbr_fragment",
             computeEntryPoint: "",
@@ -3481,6 +3480,7 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 3,
             requiredFeatures: 0,
+            sourceName: "physically_based.metal",
             indexedVertexEntryPoint: "mt_pbr_vertex",
             indexedFragmentEntryPoint: "mt_pbr_fragment",
             cpuDataSize: UInt32(MemoryLayout<PBRMaterialData>.size),
@@ -3491,7 +3491,6 @@ public struct BuiltInShaderLayout {
     public static func directionalShadow() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .directionalShadow,
-            sourceName: "directional_shadow.metal",
             vertexEntryPoint: "mt_directional_shadow_vertex",
             fragmentEntryPoint: "mt_directional_shadow_fragment",
             computeEntryPoint: "",
@@ -3501,6 +3500,7 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 3,
             requiredFeatures: 0,
+            sourceName: "directional_shadow.metal",
             indexedVertexEntryPoint: "mt_directional_shadow_vertex",
             indexedFragmentEntryPoint: "mt_directional_shadow_fragment",
             cpuDataSize: UInt32(
@@ -3513,7 +3513,6 @@ public struct BuiltInShaderLayout {
     public static func meshVisualization() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .meshVisualization,
-            sourceName: "mesh_visualization.metal",
             vertexEntryPoint: "mt_mesh_visualization_vertex",
             fragmentEntryPoint: "mt_mesh_visualization_fragment",
             computeEntryPoint: "",
@@ -3523,6 +3522,7 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 3,
             requiredFeatures: 0,
+            sourceName: "mesh_visualization.metal",
             indexedVertexEntryPoint: "mt_mesh_visualization_vertex",
             indexedFragmentEntryPoint: "mt_mesh_visualization_fragment",
             cpuDataSize: UInt32(
@@ -3535,7 +3535,6 @@ public struct BuiltInShaderLayout {
     public static func billboard() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .billboard,
-            sourceName: "billboard.metal",
             vertexEntryPoint: "mt_billboard_vertex",
             fragmentEntryPoint: "mt_billboard_fragment",
             computeEntryPoint: "",
@@ -3545,6 +3544,7 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 3,
             requiredFeatures: 0,
+            sourceName: "billboard.metal",
             indexedVertexEntryPoint: "mt_billboard_vertex",
             indexedFragmentEntryPoint: "mt_billboard_fragment",
             cpuDataSize: UInt32(MemoryLayout<BillboardMaterialData>.size),
@@ -3555,7 +3555,6 @@ public struct BuiltInShaderLayout {
     public static func text() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .text,
-            sourceName: "text.metal",
             vertexEntryPoint: "mt_text_vertex",
             fragmentEntryPoint: "mt_text_fragment",
             computeEntryPoint: "",
@@ -3565,6 +3564,7 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 3,
             requiredFeatures: 0,
+            sourceName: "text.metal",
             indexedVertexEntryPoint: "mt_text_vertex",
             indexedFragmentEntryPoint: "mt_text_fragment",
             cpuDataSize: UInt32(MemoryLayout<TextMaterialData>.size),
@@ -3575,7 +3575,6 @@ public struct BuiltInShaderLayout {
     public static func lightClustering() -> BuiltInShaderLayout {
         BuiltInShaderLayout(
             family: .lightClustering,
-            sourceName: "light_clustering.metal",
             vertexEntryPoint: "",
             fragmentEntryPoint: "",
             computeEntryPoint: "mt_light_cluster_kernel",
@@ -3585,13 +3584,14 @@ public struct BuiltInShaderLayout {
             materialBufferIndex: 2,
             lightBufferIndex: 1,
             requiredFeatures: 0,
-            auxiliaryBufferIndex0: 0,
-            auxiliaryBufferIndex1: 3,
+            sourceName: "light_clustering.metal",
             supportsIndexedFallback: false,
             cpuDataSize: UInt32(
                 MemoryLayout<LightClusterAssignmentGPUData>.size
             ),
-            mslDataSize: 16
+            mslDataSize: 16,
+            auxiliaryBufferIndex0: 0,
+            auxiliaryBufferIndex1: 3
         )
     }
 

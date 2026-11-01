@@ -15,8 +15,8 @@ integration in consuming C++ projects, AppKit, or `MTKView`.
 ## Requirements
 
 - macOS 13+
-- CMake 3.26+ with a Swift 5.9-compatible toolchain
-- Clang/Xcode toolchain for C++ interoperability
+- CMake 3.26+
+- A full Xcode installation with the Swift and Metal toolchains
 
 The commands below must run on macOS with the Metal SDK available. The
 repository intentionally does not provide a non-Apple build; runtime checks
@@ -31,13 +31,23 @@ targets.
 
 ### CMake Debug build
 
+The CMake Swift target must use the Xcode generator; the `Unix Makefiles`
+generator does not support Swift. Command Line Tools alone are not sufficient.
+
 Configure the core library, C++ tests, and examples:
 
 ```sh
 cmake -S . -B build/cmake-debug \
+  -G Xcode \
   -DCMAKE_BUILD_TYPE=Debug \
   -DMT_BUILD_TESTS=ON \
   -DMT_BUILD_EXAMPLES=ON
+```
+
+Build the core `mt` target:
+
+```sh
+cmake --build build/cmake-debug --config Debug --target mt
 ```
 
 Build and run the CMake test suite:
@@ -77,6 +87,7 @@ Use a separate build directory for Release artifacts:
 
 ```sh
 cmake -S . -B build/cmake-release \
+  -G Xcode \
   -DCMAKE_BUILD_TYPE=Release \
   -DMT_BUILD_TESTS=ON \
   -DMT_BUILD_EXAMPLES=ON
@@ -96,6 +107,7 @@ consumer test and run CTest:
 
 ```sh
 cmake -S . -B build/cmake-package \
+  -G Xcode \
   -DCMAKE_BUILD_TYPE=Debug \
   -DMT_BUILD_TESTS=ON \
   -DMT_BUILD_EXAMPLES=ON \

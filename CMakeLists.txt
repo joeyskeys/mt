@@ -7,6 +7,7 @@ project(
     LANGUAGES CXX Swift
 )
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 include(AddSwift)
 
 if(NOT APPLE)
@@ -16,7 +17,10 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_Swift_LANGUAGE_VERSION 5.9)
+# Xcode 27's Swift compiler accepts language modes 4, 4.2, 5, and 6.
+# The sources use Swift 5 syntax and the broad "5" mode remains compatible
+# with older Xcode versions that accepted the more specific 5.x spelling.
+set(CMAKE_Swift_LANGUAGE_VERSION 5)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING
     "Minimum macOS deployment target for mt")
 
@@ -535,7 +539,7 @@ install(
 )
 
 install(
-    FILES ${CMAKE_CURRENT_BINARY_DIR}/MTCore-Swift.h
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/include/MTCore-Swift.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mt
 )
 
@@ -550,7 +554,7 @@ if(MT_BUILD_APPKIT)
     )
     install(
         FILES
-            ${CMAKE_CURRENT_BINARY_DIR}/MTAppKit-Swift.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/MTAppKit-Swift.h
             ${CMAKE_CURRENT_SOURCE_DIR}/include/mt/appkit.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mt
     )
@@ -567,7 +571,7 @@ if(MT_BUILD_MTKVIEW)
     )
     install(
         FILES
-            ${CMAKE_CURRENT_BINARY_DIR}/MTMetalKit-Swift.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/MTMetalKit-Swift.h
             ${CMAKE_CURRENT_SOURCE_DIR}/include/mt/mtkview.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mt
     )
@@ -584,7 +588,7 @@ if(MT_BUILD_IMGUI)
     )
     install(
         FILES
-            ${CMAKE_CURRENT_BINARY_DIR}/MTImGui-Swift.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/MTImGui-Swift.h
             ${CMAKE_CURRENT_SOURCE_DIR}/include/mt/imgui.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mt
     )
@@ -601,7 +605,7 @@ if(MT_BUILD_TEXT)
     )
     install(
         FILES
-            ${CMAKE_CURRENT_BINARY_DIR}/MTText-Swift.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/MTText-Swift.h
             ${CMAKE_CURRENT_SOURCE_DIR}/include/mt/text.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mt
     )
@@ -618,7 +622,7 @@ if(MT_BUILD_FREETYPE_BRIDGE)
     )
     install(
         FILES
-            ${CMAKE_CURRENT_BINARY_DIR}/MTFreeType-Swift.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/MTFreeType-Swift.h
             ${CMAKE_CURRENT_SOURCE_DIR}/include/mt/freetype.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mt
     )
@@ -635,7 +639,7 @@ if(MT_BUILD_ASSET_PIPELINE)
     )
     install(
         FILES
-            ${CMAKE_CURRENT_BINARY_DIR}/MTAssetPipeline-Swift.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/MTAssetPipeline-Swift.h
             ${CMAKE_CURRENT_SOURCE_DIR}/include/mt/asset_pipeline.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mt
     )
@@ -652,7 +656,7 @@ if(MT_BUILD_EXTERNAL_RESOURCES)
     )
     install(
         FILES
-            ${CMAKE_CURRENT_BINARY_DIR}/MTExternalResources-Swift.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/MTExternalResources-Swift.h
             ${CMAKE_CURRENT_SOURCE_DIR}/include/mt/external_resources.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mt
     )
